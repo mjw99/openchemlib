@@ -141,6 +141,7 @@ public abstract class AbstractDepictor<T> {
 	public static final int	cDModeNoStereoProblem = 0x0800;
 	public static final int	cDModeNoColorOnESRAndCIP = 0x1000;
 	public static final int cDModeNoImplicitHydrogen = 0x2000;
+	public static final int cDModeDrawBondsInGray = 0x4000;
 
 	private static final double cFactorTextSize = 0.6;
 	private static final double cFactorChiralTextSize = 0.5;
@@ -629,6 +630,13 @@ public abstract class AbstractDepictor<T> {
 		mpDot.clear();
 		mpTabuZone.clear();
 
+		if ((mDisplayMode & cDModeNoTabus) != 0) {
+			// we draw bonds first
+			mpDrawAllBonds(esrGroupMemberCount);
+			mpDrawAllDots();
+			mpDrawBondQueryFeatures();
+			}
+
 		for (int i=0; i<mMol.getAllAtoms(); i++) {
 			if (isHighlightedAtom(i)) {
 				setColor_(COLOR_HILITE_BOND_FG);
@@ -655,9 +663,12 @@ public abstract class AbstractDepictor<T> {
 	    		mpDrawAtom(i, esrGroupMemberCount);
 				}
 			}
-		mpDrawAllDots();
-        mpDrawBondQueryFeatures();
-		mpDrawAllBonds(esrGroupMemberCount);
+
+		if ((mDisplayMode & cDModeNoTabus) == 0) {
+			mpDrawAllDots();
+			mpDrawBondQueryFeatures();
+			mpDrawAllBonds(esrGroupMemberCount);
+			}
 		}
 
 
@@ -820,6 +831,14 @@ public abstract class AbstractDepictor<T> {
 
 
 	private void mpDrawAllBonds(int[][] esrGroupMemberCount) {
+		int origColor = mStandardForegroundColor;
+		int origForeground = mCustomForeground;
+		if ((mDisplayMode & cDModeDrawBondsInGray) != 0) {
+			mStandardForegroundColor = COLOR_CUSTOM_FOREGROUND;
+			mCustomForeground = 0xFF808080;
+			setColor_(cColorGray);
+			}
+
 		mAlternativeCoords = new GenericPoint[mMol.getAllAtoms()];
 
     		// add all double bonds first because they may set alternative coords for single bonds
@@ -889,6 +908,11 @@ public abstract class AbstractDepictor<T> {
 				}
 			setColor_(mStandardForegroundColor);
 			mpSetNormalLabelSize();
+			}
+
+		if ((mDisplayMode & cDModeDrawBondsInGray) != 0) {
+			mStandardForegroundColor = origColor;
+			mCustomForeground = origForeground;
 			}
 		}
 
@@ -1766,11 +1790,11 @@ public abstract class AbstractDepictor<T> {
 					isoStr = append(isoStr, "e1");
 				else if (eNegNeighbours == (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot2))
 					isoStr = append(isoStr, "e2");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValue & ~Molecule.cAtomQFNot3ENegNeighbours))
+				else if (eNegNeighbours == (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot3))
 					isoStr = append(isoStr, "e3");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValueNot2 | Molecule.cAtomQFNot3ENegNeighbours | Molecule.cAtomQFZValueNot4))
+				else if (eNegNeighbours == (Molecule.cAtomQFZValueNot2 | Molecule.cAtomQFZValueNot3 | Molecule.cAtomQFZValueNot4))
 					isoStr = append(isoStr, "e<2");
-				else if (eNegNeighbours == (Molecule.cAtomQFNot3ENegNeighbours | Molecule.cAtomQFZValueNot4))
+				else if (eNegNeighbours == (Molecule.cAtomQFZValueNot3 | Molecule.cAtomQFZValueNot4))
 					isoStr = append(isoStr, "e<3");
 				else if (eNegNeighbours == Molecule.cAtomQFZValueNot4)
 					isoStr = append(isoStr, "e<4");

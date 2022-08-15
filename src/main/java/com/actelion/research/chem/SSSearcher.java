@@ -1502,9 +1502,11 @@ System.out.println();
 					mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize7;
 				}
 			}
-		for (int atom=0; atom<nTotalFragmentAtoms; atom++)
-			if (fragment.getAtomRingSize(atom) > 7)
-				mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSizeLarge;
+// Cannot require that, because if a molecule atom is also part of a small ring,
+// then the large ring membership is not known anymore
+//		for (int atom=0; atom<nTotalFragmentAtoms; atom++)
+//			if (fragment.getAtomRingSize(atom) > 7)
+//				mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSizeLarge;
 
 		int nTotalFragmentBonds = fragment.getBonds();
 
@@ -1610,8 +1612,8 @@ System.out.println();
 				break;
 				}
 
-			int eNegNeighbours = mol.getAtomZValue(atom);
-			switch (eNegNeighbours) {
+			int zValue = mol.getAtomZValue(atom);
+			switch (zValue) {
 				case 0:
 					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot0);
 					break;
@@ -1622,7 +1624,7 @@ System.out.println();
 					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot2);
 					break;
 				case 3:
-					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFNot3ENegNeighbours);
+					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot3);
 					break;
 				default:
 					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot4);
@@ -1702,13 +1704,13 @@ System.out.println();
 					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot4);
 					break;
 				}
-			}
 
-		int piElectrons = mol.getAtomPi(atom);
-		if (piElectrons > 0)
-			queryDefaults |= Molecule.cAtomQFNot0PiElectrons;
-		if (piElectrons > 1)
-			queryDefaults |= Molecule.cAtomQFNot1PiElectron;
+			int piElectrons = mol.getAtomPi(atom);
+			if (piElectrons > 0)
+				queryDefaults |= Molecule.cAtomQFNot0PiElectrons;
+			if (piElectrons > 1)
+				queryDefaults |= Molecule.cAtomQFNot1PiElectron;
+			}
 
 		return queryDefaults;
 		}
