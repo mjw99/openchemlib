@@ -16,7 +16,7 @@ import org.junit.Test;
 import com.actelion.research.chem.StereoMolecule;
 import com.actelion.research.chem.io.SDFileParser;
 
-public class MMFFTest {
+public class ForceFieldMMFF94Test {
 
 	private String getAbsoluteResourcePath(String ResourceName) {
 		ClassLoader ClassLoader = getClass().getClassLoader();
