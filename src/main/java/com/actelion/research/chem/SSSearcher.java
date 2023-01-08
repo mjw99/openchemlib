@@ -36,7 +36,9 @@ package com.actelion.research.chem;
 
 import com.actelion.research.util.IntArrayComparator;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.TreeSet;
 
 public class SSSearcher {
 	// CONSTANTS TO DEFINE KIND OF SIMILARITY BETWEEN ATOMS AND BONDS
@@ -63,7 +65,7 @@ public class SSSearcher {
 	public static final int cIndexMatchMode = cMatchDBondToDelocalized;
 	public static final int cDefaultMatchMode = cMatchAromDBondToDelocalized;
 
-	public final static int cCountModeExistance		= 1;    // check only, don't create matchList
+	public final static int cCountModeExistence     = 1;    // check only, don't create matchList
 	public final static int cCountModeFirstMatch	= 2;    // create matchList with just one match
 	public final static int cCountModeSeparated		= 3;    // create list of all non-overlapping matches / not optimized for maximum match count
 	public final static int cCountModeOverlapping	= 4;    // create list not containing multiple matches sharing exactly the same atoms
@@ -100,6 +102,7 @@ public class SSSearcher {
 	private int[] mFragmentGraphParentBond;
 	private boolean[] mFragmentGraphIsRingClosure;
 	private boolean[] mIsExcludeAtom;
+	private boolean[] mIsBridgeBondAtom;
 	private int[] mFragmentConnAtoms;	// in case of exclude atoms, these are not part of this
 	private int[] mMatchTable;
 	private int[] mExcludeGroupNo;
@@ -111,6 +114,7 @@ public class SSSearcher {
 	private TreeSet<int[]> mSortedMatchSet;
 	private ArrayList<int[]> mMatchList;
 	private ArrayList<BridgeBond> mBridgeBondList;
+	private ArrayList<boolean[]> mBridgeBondAtomList;
 
 	private boolean mMoleculeFeaturesValid;
 	private boolean mFragmentFeaturesValid;
@@ -129,8 +133,7 @@ public class SSSearcher {
 	 */
 	public SSSearcher() {
 		mDefaultMatchMode = cDefaultMatchMode;
-		mMatchList = new ArrayList<int[]>();
-		mSortedMatchSet = new TreeSet<int[]>(new IntArrayComparator());
+		mSortedMatchSet = new TreeSet<>(new IntArrayComparator());
 		}
 
 
@@ -145,8 +148,7 @@ public class SSSearcher {
 	 */
 	public SSSearcher(int matchMode) {
 		mDefaultMatchMode = matchMode;
-		mMatchList = new ArrayList<int[]>();
-		mSortedMatchSet = new TreeSet<int[]>(new IntArrayComparator());
+		mSortedMatchSet = new TreeSet<>(new IntArrayComparator());
 		}
 
 
@@ -381,7 +383,8 @@ System.out.println();
 	 * If the match count mode is one of cCountModeFirstMatch, cCountModeOverlapping,
 	 * cCountModeRigorous then this method returns an arraylist of all counted matches,
 	 * i.e. int arrays mapping fragment atoms to molecule atoms. Atoms being part of a
-	 * matched bridge bond are naturally not covered by the mapping.<br>
+	 * matched bridge bond are naturally not covered by the mapping. Atoms being part of a
+	 * matching bridge bond are available with getBridgeBondAtomList().<br>
 	 * Note: If some query fragment atoms are marked as exclude group, then the respective
 	 * matchlist values are -1.
 	 * @return list of distinct counted matches.
@@ -390,6 +393,16 @@ System.out.println();
 		return mMatchList;
 		}
 
+	/**
+	 * getMatchList() doesn't include information about atoms, which are part of a matching bridge bond.
+	 * This method returns an atom mask for a given matchNo, where all atoms are flagged that are part of a
+	 * matching bridge bond within that match.
+	 * @param matchNo index of corresponding match from getMatchList()
+	 * @return null or atom mask in target atom space
+	 */
+	public boolean[] getMatchingBridgeBondAtoms(int matchNo) {
+		return mBridgeBondAtomList.size() <= matchNo ? null : mBridgeBondAtomList.get(matchNo);
+		}
 
 	/**
 	 * Fastest check, whether the molecule contains the fragment.
@@ -400,7 +413,7 @@ System.out.println();
 	 * @return whether fragment was found as sub-structure in molecule
 	 */
 	public boolean isFragmentInMolecule() {
-		return (findFragmentInMolecule(cCountModeExistance, mDefaultMatchMode) > 0);
+		return (findFragmentInMolecule(cCountModeExistence, mDefaultMatchMode) > 0);
 		}
 
 
@@ -412,7 +425,7 @@ System.out.println();
 	 * @return whether fragment was found as sub-structure in molecule
 	 */
 	public boolean isFragmentInMolecule(int matchMode) {
-		return (findFragmentInMolecule(cCountModeExistance, matchMode) > 0);
+		return (findFragmentInMolecule(cCountModeExistence, matchMode) > 0);
 		}
 
 	/**
@@ -455,7 +468,8 @@ System.out.println();
 	 */
 	public int findFragmentInMolecule(int countMode, int matchMode, final boolean[] atomExcluded) {
 		mStop = false;
-		mMatchList = new ArrayList<int[]>();
+		mMatchList = new ArrayList<>();
+		mBridgeBondAtomList = new ArrayList<>();
 		mSortedMatchSet.clear();
 
 		if (mMolecule == null
@@ -570,7 +584,7 @@ System.out.println();
 							}
 						}
 
-					if (countMode == cCountModeExistance && !isExcludedMatch)
+					if (countMode == cCountModeExistence && !isExcludedMatch)
 						return 1;
 
 					if (!isExcludedMatch) {
@@ -598,13 +612,13 @@ System.out.println();
 		if (countMode == cCountModeFirstMatch
 		 || countMode == cCountModeRigorous) {
 			// count every match (even permutations of same atoms)
-			mMatchList.add(copyOf(mMatchTable, mMatchTable.length));
+			addMatchAtoms();
 			}
 		else if (countMode == cCountModeOverlapping) {
 			int[] sortedMatch = getSortedMatch(copyOf(mMatchTable, mMatchTable.length));
 			if (!mSortedMatchSet.contains(sortedMatch)) {
 				mSortedMatchSet.add(sortedMatch);
-				mMatchList.add(copyOf(mMatchTable, mMatchTable.length));
+				addMatchAtoms();
 				}
 			}
 		else if (countMode == cCountModeSeparated) {
@@ -628,7 +642,7 @@ System.out.println();
 					}
 				if (!found) {
 					mSortedMatchSet.add(sortedMatch);
-					mMatchList.add(copyOf(mMatchTable, mMatchTable.length));
+					addMatchAtoms();
 					}
 				}
 			}
@@ -636,11 +650,16 @@ System.out.println();
 			int[] sortedMatch = getSortedSymmetryMatch(copyOf(mMatchTable, mMatchTable.length));
 			if (!mSortedMatchSet.contains(sortedMatch)) {
 				mSortedMatchSet.add(sortedMatch);
-				mMatchList.add(copyOf(mMatchTable, mMatchTable.length));
+				addMatchAtoms();
 				}
 			}
 		}
 
+	private void addMatchAtoms() {
+		mMatchList.add(copyOf(mMatchTable, mMatchTable.length));
+		if (mBridgeBondList != null)
+			mBridgeBondAtomList.add(copyOf(mIsBridgeBondAtom, mIsBridgeBondAtom.length));
+		}
 
 	/**
 	 * @return sorted match atoms without excluded atoms
@@ -763,6 +782,7 @@ System.out.println();
 				}
 			}
 
+		// molecule features must be a subset of the fragment features
 		if ((mMoleculeAtomFeatures[moleculeAtom] & ~mFragmentAtomFeatures[fragmentAtom]) != 0)
 			return false;
 
@@ -1182,7 +1202,7 @@ System.out.println();
 				if (!mFragmentGraphIsRingClosure[current]) {	// current graph position is not an anchor
 					if (!atomUsed[candidate]) {
 						if (areAtomsSimilar(candidate, mFragmentGraphAtom[current])
-								&& areBondsSimilar(mMolecule.getConnBond(mMatchTable[mFragmentGraphParentAtom[current]], index[current]), mFragmentGraphParentBond[current])) {
+						 && areBondsSimilar(mMolecule.getConnBond(mMatchTable[mFragmentGraphParentAtom[current]], index[current]), mFragmentGraphParentBond[current])) {
 							atomUsed[candidate] = true;
 							mMatchTable[mFragmentGraphAtom[current]] = candidate;
 							current++;
@@ -1191,7 +1211,7 @@ System.out.println();
 					}
 				else {	// current graph position is ringClosure
 					if (candidate == mMatchTable[mFragmentGraphAtom[current]]
-							&& areBondsSimilar(mMolecule.getConnBond(mMatchTable[mFragmentGraphParentAtom[current]], index[current]), mFragmentGraphParentBond[current])) {
+					 && areBondsSimilar(mMolecule.getConnBond(mMatchTable[mFragmentGraphParentAtom[current]], index[current]), mFragmentGraphParentBond[current])) {
 						current++;
 						}
 					}
@@ -1243,15 +1263,19 @@ System.out.println();
 	 */
 	private boolean doBridgeBondsMatch(boolean[] moleculeAtomUsed, int excludeGroupNo) {
 		if (mBridgeBondList != null) {
+			mIsBridgeBondAtom = new boolean[moleculeAtomUsed.length];
 			for (BridgeBond bb:mBridgeBondList) {
 				if (mExcludeGroupNo == null
 				 ||	(excludeGroupNo == -1 && mExcludeGroupNo[bb.atom1] == -1 && mExcludeGroupNo[bb.atom2] == -1)
 				 || (excludeGroupNo != -1 && (mExcludeGroupNo[bb.atom1] == excludeGroupNo || mExcludeGroupNo[bb.atom2] == excludeGroupNo))) {
-//				if ((mIsExcludeAtom[bb.atom1] || mIsExcludeAtom[bb.atom2]) == isExcludeFragment) {
-					int bridgeSize = mMolecule.getPathLength(mMatchTable[bb.atom1], mMatchTable[bb.atom2], bb.maxBridgeSize+1, moleculeAtomUsed) - 1;
+					int[] pathAtom = new int[bb.maxBridgeSize+2];
+					int bridgeSize = mMolecule.getPath(pathAtom, mMatchTable[bb.atom1], mMatchTable[bb.atom2], bb.maxBridgeSize+1, moleculeAtomUsed, null) - 1;
 					if (bridgeSize < bb.minBridgeSize
 					 || bridgeSize > bb.maxBridgeSize)
 						return false;
+
+					for (int i=1; i<=bridgeSize; i++)
+						mIsBridgeBondAtom[pathAtom[i]] = true;
 					}
 				}
 			}
@@ -1266,7 +1290,28 @@ System.out.println();
 	 * @return true if all molecule bond features are present in fragment bond
 	 */
 	public boolean areBondsSimilar(int moleculeBond, int fragmentBond) {
-		if ((mMoleculeBondFeatures[moleculeBond] & ~mFragmentBondFeatures[fragmentBond]) != 0)
+		int molDefaults = mMoleculeBondFeatures[moleculeBond];
+		int frgDefaults = mFragmentBondFeatures[fragmentBond];
+
+		if ((mFragment.getBondQueryFeatures(fragmentBond) & Molecule.cBondQFMatchFormalOrder) != 0) {
+			int molBondType = mMolecule.getBondTypeSimple(moleculeBond);
+			int frgBondType = mFragment.getBondTypeSimple(fragmentBond);
+			int frgBondTypes = mFragment.getBondQueryFeatures(fragmentBond) & Molecule.cBondQFBondTypes;
+			if (molBondType != frgBondType
+			 && !(molBondType == Molecule.cBondTypeSingle && (frgBondTypes & Molecule.cBondQFSingle) != 0)
+			 && !(molBondType == Molecule.cBondTypeDouble && (frgBondTypes & Molecule.cBondQFDouble) != 0)
+			 && !(molBondType == Molecule.cBondTypeTriple && (frgBondTypes & Molecule.cBondQFTriple) != 0)
+			 && !(molBondType == Molecule.cBondTypeQuadruple && (frgBondTypes & Molecule.cBondQFQuadruple) != 0)
+			 && !(molBondType == Molecule.cBondTypeQuintuple && (frgBondTypes & Molecule.cBondQFQuintuple) != 0)
+			 && !(molBondType == Molecule.cBondTypeMetalLigand && (frgBondTypes & Molecule.cBondQFMetalLigand) != 0)
+			 && !(molBondType == Molecule.cBondTypeDelocalized && (frgBondTypes & Molecule.cBondQFDelocalized) != 0))
+				return false;
+
+			molDefaults &= ~Molecule.cBondQFBondTypes;
+			frgDefaults &= ~Molecule.cBondQFBondTypes;
+			}
+
+		if ((molDefaults & ~frgDefaults) != 0)
 			return false;
 
 		int ringSize = (mFragment.getBondQueryFeatures(fragmentBond) & Molecule.cBondQFRingSize) >> Molecule.cBondQFRingSizeShift;
@@ -1427,6 +1472,8 @@ System.out.println();
 		for (int atom=0; atom<mFragment.getAtoms(); atom++)
 			mFragmentConnAtoms[atom] = mFragment.getConnAtoms(atom);
 
+		// If we have exclude groups, we need to determine atom and bond features without the exclude atoms and
+		// map them to the original fragment atom and bond indexes.
 		if (mFragmentExcludeAtoms != 0) {
 			StereoMolecule fragmentWithoutExcludeGroups = new StereoMolecule(mFragment.getAllAtoms(), mFragment.getAllBonds());
 			boolean[] isNonExcludeAtom = new boolean[mFragment.getAllAtoms()];
@@ -1446,6 +1493,8 @@ System.out.println();
 					mFragmentConnAtoms[atom] = fragmentWithoutExcludeGroups.getConnAtoms(index++);
 			}
 
+		// We cannot skip this if we have exclude groups:
+		// We need to determine exclude groups atom & bond features for the exclude group matching phase.
 		setupFragmentFeatures(mFragment, matchMode);
 
 		if (mFragmentExcludeAtoms != 0) {
@@ -1473,7 +1522,7 @@ System.out.println();
 
 		for (int atom=0; atom<nTotalFragmentAtoms; atom++) {
 			mFragmentAtomFeatures[atom] = ((getAtomQueryDefaults(fragment, atom)
-				| mFragment.getAtomQueryFeatures(atom))
+				| fragment.getAtomQueryFeatures(atom))
 					& Molecule.cAtomQFSimpleFeatures)
 					^ Molecule.cAtomQFNarrowing;
 			mFragmentAtomType[atom] = fragment.getAtomicNo(atom);
@@ -1488,18 +1537,27 @@ System.out.println();
 		mFragmentRingFeatures = new long[fragment.getAtoms()];
 		RingCollection ringSet = fragment.getRingSet();
 		for (int i=0; i<ringSet.getSize(); i++) {
-			int ringSize = ringSet.getRingSize(i);
-			for (int atom:ringSet.getRingAtoms(i)) {
-				if (ringSize == 3)
-					mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize3;
-				else if (ringSize == 4)
-					mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize4;
-				else if (ringSize == 5)
-					mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize5;
-				else if (ringSize == 6)
-					mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize6;
-				else if (ringSize == 7)
-					mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize7;
+			boolean containsBridgeBond = false;
+			for (int bond:ringSet.getRingBonds(i)) {
+				if (fragment.isBondBridge(bond)) {
+					containsBridgeBond = true;
+					break;
+					}
+				}
+			if (!containsBridgeBond) {
+				int ringSize = ringSet.getRingSize(i);
+				for (int atom:ringSet.getRingAtoms(i)) {
+					if (ringSize == 3)
+						mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize3;
+					else if (ringSize == 4)
+						mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize4;
+					else if (ringSize == 5)
+						mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize5;
+					else if (ringSize == 6)
+						mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize6;
+					else if (ringSize == 7)
+						mFragmentRingFeatures[atom] |= Molecule.cAtomQFRingSize7;
+					}
 				}
 			}
 // Cannot require that, because if a molecule atom is also part of a small ring,
@@ -1541,7 +1599,10 @@ System.out.println();
 		long queryDefaults = 0;
 
 		if (!mol.isFragment()) {
-			if (mol.isAromaticAtom(atom))
+			if (mol.isHeteroAromaticAtom(atom))
+				queryDefaults |= (Molecule.cAtomQFAromatic
+								| Molecule.cAtomQFHeteroAromatic);
+			else if (mol.isAromaticAtom(atom))
 				queryDefaults |= Molecule.cAtomQFAromatic;
 			else
 				queryDefaults |= Molecule.cAtomQFNotAromatic;
@@ -1612,22 +1673,22 @@ System.out.println();
 				break;
 				}
 
-			int zValue = mol.getAtomZValue(atom);
-			switch (zValue) {
+			int eValue = mol.getAtomElectronegativeNeighbours(atom);
+			switch (eValue) {
 				case 0:
-					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot0);
+					queryDefaults |= (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot0ENeighbours);
 					break;
 				case 1:
-					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot1);
+					queryDefaults |= (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot1ENeighbour);
 					break;
 				case 2:
-					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot2);
+					queryDefaults |= (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot2ENeighbours);
 					break;
 				case 3:
-					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot3);
+					queryDefaults |= (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot3ENeighbours);
 					break;
 				default:
-					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot4);
+					queryDefaults |= (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot4ENeighbours);
 					break;
 				}
 
@@ -1649,7 +1710,10 @@ System.out.println();
 			}
 		else {	// The fragments implicit features are not really necessary,
 				  // but may speed up the graph matching.
-			if (mol.isAromaticAtom(atom))
+			if (mol.isHeteroAromaticAtom(atom))
+				queryDefaults |= (Molecule.cAtomQFAromatic
+							  | Molecule.cAtomQFHeteroAromatic);
+			else if (mol.isAromaticAtom(atom))
 				queryDefaults |= Molecule.cAtomQFAromatic;
 
 			int ringBonds = mol.getAtomRingBondCount(atom);
@@ -1687,21 +1751,21 @@ System.out.println();
 				break;
 				}
 
-			int zValue = mol.getAtomZValue(atom);
-			switch (zValue) {
+			int eValue = mol.getAtomElectronegativeNeighbours(atom);
+			switch (eValue) {
 				case 0:
 					break;
 				case 1:
-					queryDefaults |= (Molecule.cAtomQFZValueNot0);
+					queryDefaults |= (Molecule.cAtomQFNot0ENeighbours);
 					break;
 				case 2:
-					queryDefaults |= (Molecule.cAtomQFZValueNot0 | Molecule.cAtomQFZValueNot1);
+					queryDefaults |= (Molecule.cAtomQFNot0ENeighbours | Molecule.cAtomQFNot1ENeighbour);
 					break;
 				case 3:
-					queryDefaults |= (Molecule.cAtomQFZValueNot0 | Molecule.cAtomQFZValueNot1 | Molecule.cAtomQFZValueNot2);
+					queryDefaults |= (Molecule.cAtomQFNot0ENeighbours | Molecule.cAtomQFNot1ENeighbour | Molecule.cAtomQFNot2ENeighbours);
 					break;
 				default:
-					queryDefaults |= (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot4);
+					queryDefaults |= (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot4ENeighbours);
 					break;
 				}
 
@@ -1741,6 +1805,12 @@ System.out.println();
 			case 3:
 				queryDefaults |= Molecule.cBondQFTriple;
 				break;
+			case 4:
+				queryDefaults |= Molecule.cBondQFQuadruple;
+				break;
+			case 5:
+				queryDefaults |= Molecule.cBondQFQuintuple;
+				break;
 			}
 
 		if (mol.isRingBond(bond))
@@ -1762,7 +1832,7 @@ System.out.println();
 		for (int bond=0; bond<mFragment.getBonds(); bond++) {
 			if (mFragment.isBondBridge(bond)) {
 				if (mBridgeBondList == null)
-					mBridgeBondList = new ArrayList<BridgeBond>();
+					mBridgeBondList = new ArrayList<>();
 				BridgeBond bridgeBond = new BridgeBond();
 				bridgeBond.atom1 = mFragment.getBondAtom(0, bond);
 				bridgeBond.atom2 = mFragment.getBondAtom(1, bond);
@@ -1779,6 +1849,12 @@ System.out.println();
 
 	private static int[] copyOf(int[] original, int newLength) {
 		int[] copy = new int[newLength];
+		System.arraycopy(original, 0, copy, 0, Math.min(original.length, newLength));
+		return copy;
+		}
+
+	private static boolean[] copyOf(boolean[] original, int newLength) {
+		boolean[] copy = new boolean[newLength];
 		System.arraycopy(original, 0, copy, 0, Math.min(original.length, newLength));
 		return copy;
 		}

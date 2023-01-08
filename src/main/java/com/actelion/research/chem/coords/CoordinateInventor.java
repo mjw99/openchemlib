@@ -165,7 +165,7 @@ public class CoordinateInventor {
 			mRandom = new Random();
 
 		if ((mMode & MODE_REMOVE_HYDROGEN) != 0)
-			mol.removeExplicitHydrogens();
+			mol.removeExplicitHydrogens(false, false);
 
 		mMol = mol;
 		mMol.ensureHelperArrays(Molecule.cHelperRings);
@@ -262,7 +262,7 @@ public class CoordinateInventor {
 			if (useFFP) {
 				searcherWithIndex.setFragment(templateMol, template.getFFP());
 				if (searcherWithIndex.findFragmentInMolecule(SSSearcher.cCountModeOverlapping, SSSearcher.cDefaultMatchMode) != 0)
-					matchList = searcherWithIndex.getMatchList();
+					matchList = searcherWithIndex.getGraphMatcher().getMatchList();
 				}
 			else {
 				searcher.setFragment(templateMol);

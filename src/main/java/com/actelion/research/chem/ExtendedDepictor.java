@@ -56,7 +56,7 @@ public class ExtendedDepictor {
     private int						mDisplayMode,mReactantCount,mMarkushCoreCount,mChemistryType;
     private boolean					mReactionLayoutNeeded;
     private DepictorTransformation	mTransformation;
-    private int                     mFragmentNoColor;
+    private int                     mFragmentNoColor,mDefaultAVBL;
 
     public ExtendedDepictor(StereoMolecule mol, DrawingObjectList drawingObjectList) {
         if (mol != null) {
@@ -139,10 +139,21 @@ public class ExtendedDepictor {
 			for (int i=0; i<mCatalyst.length; i++)
 				mCatalystDepictor[i] = new GenericDepictor(mCatalyst[i]);
 			}
+		mDefaultAVBL = AbstractDepictor.cOptAvBondLen;
         }
 
     public void setDisplayMode(int displayMode) {
         mDisplayMode = displayMode;
+        }
+
+    public void setDefaultAVBL(int avbl) {
+    	mDefaultAVBL = avbl;
+    }
+
+    public void setFactorTextSize(double factor) {
+    	if (mDepictor != null)
+	    	for (GenericDepictor d:mDepictor)
+	    		d.setFactorTextSize(factor);
         }
 
     public void setFragmentNoColor(int argb) {
@@ -270,6 +281,7 @@ g.drawRect((int)r.x, (int)r.y, (int)r.width, (int)r.height);
 		if (mCatalystDepictor != null) {
 			for (GenericDepictor d:mCatalystDepictor) {
 //				d.setDisplayMode(mDisplayMode);
+//				d.setFactorTextSize(mFactorTextSize);
 				d.paint(context);
 /*
 Rectangle2D.Float r = mCatalystDepictor[i].getBoundingRect();
@@ -393,7 +405,7 @@ g.drawRect((int)r.x, (int)r.y, (int)r.width, (int)r.height);*/
                     }
                 }
             }
-        return (bondCount == 0) ? AbstractDepictor.cOptAvBondLen
+        return (bondCount == 0) ? mDefaultAVBL
                                 : mTransformation.getScaling() * averageBondLength / bondCount;
         }
 

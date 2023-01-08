@@ -340,7 +340,6 @@ public class SmilesParser {
 								// If we have a comma after the first atom label, then we need to parse a list.
 								// In this case we also have to set aromaticity query features from upper and lower case symbols.
 								if (allowSmarts && (smiles[position] == ',' || isNot)) {
-									atomList.removeAll();
 									boolean upperCaseFound = false;
 									boolean lowerCaseFound = false;
 									int start = position - labelLength;
@@ -366,6 +365,7 @@ public class SmilesParser {
 											}
 										}
 									if (atomList.size() > 1) {
+										explicitHydrogens = HYDROGEN_ANY;   // don't use implicit zero with atom lists
 										if (!upperCaseFound)
 											atomQueryFeatures |= Molecule.cAtomQFAromatic;
 										else if (!lowerCaseFound)
@@ -503,19 +503,19 @@ public class SmilesParser {
 							position += range.parse(smiles, position, 1, 4);
 							long flags = 0;
 							if (range.min <= 0 && range.max >= 0)
-								flags |= Molecule.cAtomQFZValueNot0;
+								flags |= Molecule.cAtomQFNot0ENeighbours;
 							if (range.min <= 1 && range.max >= 1)
-								flags |= Molecule.cAtomQFZValueNot1;
+								flags |= Molecule.cAtomQFNot1ENeighbour;
 							if (range.min <= 2 && range.max >= 2)
-								flags |= Molecule.cAtomQFZValueNot2;
+								flags |= Molecule.cAtomQFNot2ENeighbours;
 							if (range.min <= 3 && range.max >= 3)
-								flags |= Molecule.cAtomQFZValueNot3;
+								flags |= Molecule.cAtomQFNot3ENeighbours;
 							if (range.min <= 4 && range.max >= 4)
-								flags |= Molecule.cAtomQFZValueNot4;
+								flags |= Molecule.cAtomQFNot4ENeighbours;
 
 							if (flags != 0) {
 								if (!isNot)
-									flags = flags ^ Molecule.cAtomQFZValue;
+									flags = flags ^ Molecule.cAtomQFENeighbours;
 								atomQueryFeatures |= flags;
 								}
 							continue;
@@ -630,13 +630,14 @@ public class SmilesParser {
 				else if (theChar == '?') {
 					atomicNo = 0;
 					}
+				else if ((theChar == 'A' || theChar == 'a') && allowSmarts) {
+					atomicNo = 6;
+					atomQueryFeatures |= Molecule.cAtomQFAny;
+					atomQueryFeatures |= theChar == 'A' ? Molecule.cAtomQFNotAromatic : Molecule.cAtomQFAromatic;
+					smartsFeatureFound = true;
+					}
 				else {
 					switch (Character.toUpperCase(theChar)) {
-					case 'A':
-						atomicNo = 6;
-						atomQueryFeatures |= Molecule.cAtomQFAny;
-						atomQueryFeatures |= theChar == 'A' ? Molecule.cAtomQFNotAromatic : Molecule.cAtomQFAromatic;
-						break;
 					case 'B':
 						if (position < endIndex && smiles[position] == 'r') {
 							atomicNo = 35;
@@ -687,6 +688,14 @@ public class SmilesParser {
 				mMol.setAtomAbnormalValence(atom, abnormalValence);
 				if (atomQueryFeatures != 0) {
 					smartsFeatureFound = true;
+					if ((atomQueryFeatures & Molecule.cAtomQFAromatic) != 0) {
+						atomQueryFeatures &= ~Molecule.cAtomQFAromatic;
+						mMol.setAtomMarker(atom, true);
+						mAromaticAtoms++;
+						}
+					else {
+						mMol.setAtomMarker(atom, false);
+						}
 					mMol.setAtomQueryFeature(atom, atomQueryFeatures, true);
 					}
 				if (atomList.size() != 0) {
@@ -695,18 +704,19 @@ public class SmilesParser {
 					for (int i=0; i<atomList.size(); i++)
 						list[i] = atomList.get(i);
 					mMol.setAtomList(atom, list);
+					atomList.removeAll();
 					}
+				else {  // mark aromatic atoms
+					if (Character.isLowerCase(theChar)) {
+						if (atomicNo != 5 && atomicNo != 6 && atomicNo != 7 && atomicNo != 8 && atomicNo != 15 && atomicNo != 16 && atomicNo != 33 && atomicNo != 34)
+							throw new Exception("SmilesParser: atomicNo " + atomicNo + " must not be aromatic");
 
-				// mark aromatic atoms
-				if (Character.isLowerCase(theChar)) {
-					if (atomicNo != 5 && atomicNo != 6 && atomicNo != 7 && atomicNo != 8 && atomicNo != 15 &&atomicNo != 16 && atomicNo != 33  && atomicNo != 34)
-						throw new Exception("SmilesParser: atomicNo "+atomicNo+" must not be aromatic");
-
-					mMol.setAtomMarker(atom, true);
-					mAromaticAtoms++;
-					}
-				else {
-					mMol.setAtomMarker(atom, false);
+						mMol.setAtomMarker(atom, true);
+						mAromaticAtoms++;
+						}
+					else {
+						mMol.setAtomMarker(atom, false);
+						}
 					}
 
 				// put explicitHydrogen into atomCustomLabel to keep atom-relation when hydrogens move to end of atom list in handleHydrogen()
@@ -780,6 +790,8 @@ public class SmilesParser {
 							excludedBonds |= Molecule.cBondQFDouble;
 						else if (theChar == '#')
 							excludedBonds |= Molecule.cBondQFTriple;
+						else if (theChar == '$')
+							excludedBonds |= Molecule.cBondQFQuadruple;
 						else if (theChar == ':')
 							excludedBonds |= Molecule.cBondQFDelocalized;
 						else
@@ -792,6 +804,8 @@ public class SmilesParser {
 							bondType = Molecule.cBondTypeDouble;
 						else if (theChar == '#')
 							bondType = Molecule.cBondTypeTriple;
+						else if (theChar == '$')
+							bondType = Molecule.cBondTypeQuadruple;
 						else if (theChar == ':')
 							bondType = Molecule.cBondTypeDelocalized;
 						else if (theChar == '~')
@@ -864,6 +878,7 @@ public class SmilesParser {
 										|| smiles[position-2] == '\\'
 										|| smiles[position-2] == '='
 										|| smiles[position-2] == '#'
+										|| smiles[position-2] == '$'
 										|| smiles[position-2] == ':'
 										|| smiles[position-2] == '>'
 										|| smiles[position-2] == '~');
@@ -1008,8 +1023,9 @@ public class SmilesParser {
 						mMol.setAtomQueryFeature(atom, Molecule.cAtomQFHydrogen & ~Molecule.cAtomQFNot3Hydrogen, true);
 					}
 				else {
-					if (!mMol.isMarkedAtom(atom)
-					 || (mMol.getAtomicNo(atom) == 6 && mMol.getAtomCharge(atom) == 0)) {
+					if (!mMol.isMetalAtom(atom)
+					 && (!mMol.isMarkedAtom(atom)
+					  || (mMol.getAtomicNo(atom) == 6 && mMol.getAtomCharge(atom) == 0))) {
 						// We don't correct aromatic non-carbon atoms, because for these the number of
 						// explicit hydrogens encodes whether a pi-bond needs to be placed at the atom
 						// when resolving aromaticity. Same applies for charged carbon.
@@ -1119,6 +1135,7 @@ public class SmilesParser {
 		return theChar == '-'
 			|| theChar == '='
 			|| theChar == '#'
+			|| theChar == '$'
 			|| theChar == ':'
 			|| theChar == '/'
 			|| theChar == '\\'
@@ -1131,6 +1148,7 @@ public class SmilesParser {
 	private int bondSymbolToQueryFeature(char symbol) {
 		return symbol == '=' ? Molecule.cBondQFDouble
 			 : symbol == '#' ? Molecule.cBondQFTriple
+			 : symbol == '$' ? Molecule.cBondQFQuadruple
 			 : symbol == ':' ? Molecule.cBondQFDelocalized
 			 : symbol == '>' ? Molecule.cBondQFMetalLigand
 			 : symbol == '~' ? Molecule.cBondQFBondTypes : Molecule.cBondQFSingle;
@@ -1462,7 +1480,7 @@ public class SmilesParser {
 
 
 	private boolean qualifiesForPi(int atom) {
-		if (!RingCollection.qualifiesAsAromatic(mMol.getAtomicNo(atom)))
+		if (!RingCollection.qualifiesAsAromaticAtomicNo(mMol.getAtomicNo(atom)))
 			return false;
 
 		if (mMol.getAtomicNo(atom) == 6) {

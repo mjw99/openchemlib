@@ -134,13 +134,14 @@ public abstract class AbstractDepictor<T> {
 	public static final int	cDModeSuppressCIPParity = 0x0040;
 	public static final int	cDModeSuppressESR = 0x0080;
 
-	private static final int cDModeShowSymmetryAny = 0x0700;
+	private static final int cDModeShowSymmetryAny = 0x0300;
 	public static final int cDModeShowSymmetrySimple = 0x0100;
     public static final int cDModeShowSymmetryStereoHeterotopicity = 0x0200;
 	public static final int	cDModeNoImplicitAtomLabelColors = 0x0400;
 	public static final int	cDModeNoStereoProblem = 0x0800;
 	public static final int	cDModeNoColorOnESRAndCIP = 0x1000;
 	public static final int cDModeNoImplicitHydrogen = 0x2000;
+	public static final int cDModeDrawBondsInGray = 0x4000;
 
 	private static final double cFactorTextSize = 0.6;
 	private static final double cFactorChiralTextSize = 0.5;
@@ -257,7 +258,7 @@ public abstract class AbstractDepictor<T> {
 		}
 
 	/**
-	 * If you want this tructure view to also draw an atom background with specific colors for every atom,
+	 * If you want the Depictor to draw an atom background with specific colors for every atom,
 	 * then you need to call this method before calling paint().
 	 * @param argb values with a==0 are not considered
 	 * @param radius <= 1.0; if null, then a default of 0.5 of the average bond length is used
@@ -629,6 +630,13 @@ public abstract class AbstractDepictor<T> {
 		mpDot.clear();
 		mpTabuZone.clear();
 
+		if ((mDisplayMode & cDModeNoTabus) != 0) {
+			// we draw bonds first
+			mpDrawAllBonds(esrGroupMemberCount);
+			mpDrawAllDots();
+			mpDrawBondQueryFeatures();
+			}
+
 		for (int i=0; i<mMol.getAllAtoms(); i++) {
 			if (isHighlightedAtom(i)) {
 				setColor_(COLOR_HILITE_BOND_FG);
@@ -655,9 +663,12 @@ public abstract class AbstractDepictor<T> {
 	    		mpDrawAtom(i, esrGroupMemberCount);
 				}
 			}
-		mpDrawAllDots();
-        mpDrawBondQueryFeatures();
-		mpDrawAllBonds(esrGroupMemberCount);
+
+		if ((mDisplayMode & cDModeNoTabus) == 0) {
+			mpDrawAllDots();
+			mpDrawBondQueryFeatures();
+			mpDrawAllBonds(esrGroupMemberCount);
+			}
 		}
 
 
@@ -820,6 +831,14 @@ public abstract class AbstractDepictor<T> {
 
 
 	private void mpDrawAllBonds(int[][] esrGroupMemberCount) {
+		int origColor = mStandardForegroundColor;
+		int origForeground = mCustomForeground;
+		if ((mDisplayMode & cDModeDrawBondsInGray) != 0) {
+			mStandardForegroundColor = COLOR_CUSTOM_FOREGROUND;
+			mCustomForeground = 0xFF808080;
+			setColor_(cColorGray);
+			}
+
 		mAlternativeCoords = new GenericPoint[mMol.getAllAtoms()];
 
     		// add all double bonds first because they may set alternative coords for single bonds
@@ -889,6 +908,11 @@ public abstract class AbstractDepictor<T> {
 				}
 			setColor_(mStandardForegroundColor);
 			mpSetNormalLabelSize();
+			}
+
+		if ((mDisplayMode & cDModeDrawBondsInGray) != 0) {
+			mStandardForegroundColor = origColor;
+			mCustomForeground = origForeground;
 			}
 		}
 
@@ -1108,23 +1132,45 @@ public abstract class AbstractDepictor<T> {
 			if (mpProperLine(theLine)) {
 				drawLine(theLine, atom1, atom2);
 				mpCalcPiBondOffset(theLine.x2 - theLine.x1,
-								   theLine.y2 - theLine.y1,piBondOffset);
-				aLine.x1 = theLine.x1 + piBondOffset.x;
-				aLine.y1 = theLine.y1 + piBondOffset.y;
-				aLine.x2 = theLine.x2 + piBondOffset.x;
-				aLine.y2 = theLine.y2 + piBondOffset.y;
-				drawLine(aLine, atom1, atom2);
-				aLine.x1 = theLine.x1 - piBondOffset.x;
-				aLine.y1 = theLine.y1 - piBondOffset.y;
-				aLine.x2 = theLine.x2 - piBondOffset.x;
-				aLine.y2 = theLine.y2 - piBondOffset.y;
-				drawLine(aLine, atom1, atom2);
+								   theLine.y2 - theLine.y1, piBondOffset);
+				drawOffsetLine(theLine, atom1, atom2, piBondOffset.x, piBondOffset.y, aLine);
+				drawOffsetLine(theLine, atom1, atom2, -piBondOffset.x, -piBondOffset.y, aLine);
+				}
+			break;
+		case 4:
+			if (mpProperLine(theLine)) {
+				mpCalcPiBondOffset(theLine.x2 - theLine.x1,
+						theLine.y2 - theLine.y1, piBondOffset);
+				drawOffsetLine(theLine, atom1, atom2, 1.5*piBondOffset.x, 1.5*piBondOffset.y, aLine);
+				drawOffsetLine(theLine, atom1, atom2, 0.5*piBondOffset.x, 0.5*piBondOffset.y, aLine);
+				drawOffsetLine(theLine, atom1, atom2, -0.5*piBondOffset.x, -0.5*piBondOffset.y, aLine);
+				drawOffsetLine(theLine, atom1, atom2, -1.5*piBondOffset.x, -1.5*piBondOffset.y, aLine);
+				}
+			break;
+		case 5:
+			if (mpProperLine(theLine)) {
+				drawLine(theLine, atom1, atom2);
+				mpCalcPiBondOffset(theLine.x2 - theLine.x1,
+						theLine.y2 - theLine.y1, piBondOffset);
+				drawOffsetLine(theLine, atom1, atom2, 2*piBondOffset.x, 2*piBondOffset.y, aLine);
+				drawOffsetLine(theLine, atom1, atom2, piBondOffset.x, piBondOffset.y, aLine);
+				drawOffsetLine(theLine, atom1, atom2, -piBondOffset.x, -piBondOffset.y, aLine);
+				drawOffsetLine(theLine, atom1, atom2, -2*piBondOffset.x, -2*piBondOffset.y, aLine);
 				}
 			break;
             }
 
 		if (mCurrentColor == COLOR_EXCLUDE_GROUP_FG)
 			setColor_(COLOR_RESTORE_PREVIOUS);
+		}
+
+
+	private void drawOffsetLine(DepictorLine theLine, int atom1, int atom2, double dx, double dy, DepictorLine aLine) {
+		aLine.x1 = theLine.x1 + dx;
+		aLine.y1 = theLine.y1 + dy;
+		aLine.x2 = theLine.x2 + dx;
+		aLine.y2 = theLine.y2 + dy;
+		drawLine(aLine, atom1, atom2);
 		}
 
 
@@ -1694,9 +1740,11 @@ public abstract class AbstractDepictor<T> {
 				isoStr = append(isoStr, "*");
 			if ((queryFeatures & Molecule.cAtomQFIsNotStereo) != 0)
 				isoStr = append(isoStr, "!*");
-			if ((queryFeatures & Molecule.cAtomQFAromatic) != 0)
+			if ((queryFeatures & Molecule.cAtomQFHeteroAromatic) != 0)
+				isoStr = append(isoStr, "ha");
+			else if ((queryFeatures & Molecule.cAtomQFAromatic) != 0)
 				isoStr = append(isoStr, "a");
-			if ((queryFeatures & Molecule.cAtomQFNotAromatic) != 0)
+			else if ((queryFeatures & Molecule.cAtomQFNotAromatic) != 0)
 				isoStr = append(isoStr, "!a");
 			if ((queryFeatures & Molecule.cAtomQFMoreNeighbours) != 0)
 				isoStr = append(isoStr, "s");
@@ -1758,30 +1806,36 @@ public abstract class AbstractDepictor<T> {
                 else if (neighbours == (Molecule.cAtomQFNeighbours & ~Molecule.cAtomQFNot4Neighbours))
                     isoStr = append(isoStr, "n>3");
                 }
-			if ((queryFeatures & Molecule.cAtomQFZValue) != 0) {
-				long eNegNeighbours = (queryFeatures & Molecule.cAtomQFZValue);
-				if (eNegNeighbours == (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot0))
+			if ((queryFeatures & Molecule.cAtomQFENeighbours) != 0) {
+				long eNegNeighbours = (queryFeatures & Molecule.cAtomQFENeighbours);
+				if (eNegNeighbours == (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot0ENeighbours))
 					isoStr = append(isoStr, "e0");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot1))
+				else if (eNegNeighbours == (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot1ENeighbour))
 					isoStr = append(isoStr, "e1");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot2))
+				else if (eNegNeighbours == (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot2ENeighbours))
 					isoStr = append(isoStr, "e2");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot3))
+				else if (eNegNeighbours == (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot3ENeighbours))
 					isoStr = append(isoStr, "e3");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValueNot2 | Molecule.cAtomQFZValueNot3 | Molecule.cAtomQFZValueNot4))
+				else if (eNegNeighbours == (Molecule.cAtomQFNot2ENeighbours | Molecule.cAtomQFNot3ENeighbours | Molecule.cAtomQFNot4ENeighbours))
 					isoStr = append(isoStr, "e<2");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValueNot3 | Molecule.cAtomQFZValueNot4))
+				else if (eNegNeighbours == (Molecule.cAtomQFNot3ENeighbours | Molecule.cAtomQFNot4ENeighbours))
 					isoStr = append(isoStr, "e<3");
-				else if (eNegNeighbours == Molecule.cAtomQFZValueNot4)
+				else if (eNegNeighbours == Molecule.cAtomQFNot4ENeighbours)
 					isoStr = append(isoStr, "e<4");
-				else if (eNegNeighbours == Molecule.cAtomQFZValueNot0)
+				else if (eNegNeighbours == Molecule.cAtomQFNot0ENeighbours)
 					isoStr = append(isoStr, "e>0");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValueNot0 | Molecule.cAtomQFZValueNot1))
+				else if (eNegNeighbours == (Molecule.cAtomQFNot0ENeighbours | Molecule.cAtomQFNot1ENeighbour))
 					isoStr = append(isoStr, "e>1");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValueNot0 | Molecule.cAtomQFZValueNot1 | Molecule.cAtomQFZValueNot2))
+				else if (eNegNeighbours == (Molecule.cAtomQFNot0ENeighbours | Molecule.cAtomQFNot1ENeighbour | Molecule.cAtomQFNot2ENeighbours))
 					isoStr = append(isoStr, "e>2");
-				else if (eNegNeighbours == (Molecule.cAtomQFZValue & ~Molecule.cAtomQFZValueNot4))
+				else if (eNegNeighbours == (Molecule.cAtomQFENeighbours & ~Molecule.cAtomQFNot4ENeighbours))
 					isoStr = append(isoStr, "e>3");
+				else if (eNegNeighbours == (Molecule.cAtomQFNot0ENeighbours | Molecule.cAtomQFNot3ENeighbours | Molecule.cAtomQFNot3ENeighbours))
+					isoStr = append(isoStr, "e1-2");
+				else if (eNegNeighbours == (Molecule.cAtomQFNot0ENeighbours | Molecule.cAtomQFNot4ENeighbours))
+					isoStr = append(isoStr, "e1-3");
+				else if (eNegNeighbours == (Molecule.cAtomQFNot0ENeighbours | Molecule.cAtomQFNot1ENeighbour | Molecule.cAtomQFNot4ENeighbours))
+					isoStr = append(isoStr, "e2-3");
 				}
             if ((queryFeatures & Molecule.cAtomQFRingState) != 0) {
                 long ringBonds = (queryFeatures & Molecule.cAtomQFRingState);

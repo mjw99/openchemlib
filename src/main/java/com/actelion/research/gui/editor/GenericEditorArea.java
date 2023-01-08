@@ -38,17 +38,14 @@ import com.actelion.research.chem.coords.CoordinateInventor;
 import com.actelion.research.chem.io.RDFileParser;
 import com.actelion.research.chem.io.RXNFileParser;
 import com.actelion.research.chem.name.StructureNameResolver;
-import com.actelion.research.chem.reaction.IReactionMapper;
-import com.actelion.research.chem.reaction.MCSReactionMapper;
-import com.actelion.research.chem.reaction.Reaction;
-import com.actelion.research.chem.reaction.ReactionArrow;
+import com.actelion.research.chem.reaction.*;
 import com.actelion.research.gui.FileHelper;
 import com.actelion.research.gui.LookAndFeelHelper;
 import com.actelion.research.gui.clipboard.IClipboardHandler;
 import com.actelion.research.gui.generic.*;
 import com.actelion.research.gui.hidpi.HiDPIHelper;
-import com.actelion.research.util.ColorHelper;
 import com.actelion.research.gui.swing.SwingCursorHelper;
+import com.actelion.research.util.ColorHelper;
 
 import java.awt.*;
 import java.awt.geom.Point2D;
@@ -63,6 +60,17 @@ public class GenericEditorArea implements GenericEventListener {
 	public static final int MODE_MARKUSH_STRUCTURE = 2;
 	public static final int MODE_REACTION = 4;
 	public static final int MODE_DRAWING_OBJECTS = 8;
+
+	public static final String TEMPLATE_TYPE_KEY = "TEMPLATE";
+	public static final String TEMPLATE_TYPE_REACTION_QUERIES = "REACTION_QUERIES";
+	public static final String TEMPLATE_SECTION_KEY = "SECTION";
+
+	public static final int DEFAULT_ALLOWED_PSEUDO_ATOMS
+			= Molecule.cPseudoAtomsHydrogenIsotops
+			| Molecule.cPseudoAtomsAminoAcids
+			| Molecule.cPseudoAtomR
+			| Molecule.cPseudoAtomsRGroups
+			| Molecule.cPseudoAtomAttachmentPoint;
 
 	private static final int MAX_CONNATOMS = 8;
 	private static final int MIN_BOND_LENGTH_SQUARE = 100;
@@ -82,6 +90,7 @@ public class GenericEditorArea implements GenericEventListener {
 	private static final String ITEM_COPY_REACTION = "Copy Reaction";
 	private static final String ITEM_PASTE_STRUCTURE = "Paste Structure";
 	private static final String ITEM_PASTE_REACTION = "Paste Reaction";
+	private static final String ITEM_USE_TEMPLATE = "Use Reaction Template...";
 	private static final String ITEM_PASTE_WITH_NAME = ITEM_PASTE_STRUCTURE + " or Name";
 	private static final String ITEM_LOAD_REACTION = "Open Reaction File...";
 	private static final String ITEM_ADD_AUTO_MAPPING = "Auto-Map Reaction";
@@ -89,6 +98,7 @@ public class GenericEditorArea implements GenericEventListener {
 	private static final String ITEM_FLIP_HORIZONTALLY = "Flip Horizontally";
 	private static final String ITEM_FLIP_VERTICALLY = "Flip Vertically";
 	private static final String ITEM_FLIP_ROTATE180 = "Rotate 180°";
+	private static final String ITEM_SHOW_HELP = "Help Me";
 
 	// development items
 	private static final String ITEM_SHOW_ATOM_BOND_NUMBERS = "Show Atom & Bond Numbers";
@@ -138,13 +148,15 @@ public class GenericEditorArea implements GenericEventListener {
 	private static final int cRequestCopyObject = 11;
 
 	private static IReactionMapper sMapper;
+	private static String[][] sReactionQueryTemplates;
 	private int mMode, mChainAtoms, mCurrentTool, mCustomAtomicNo, mCustomAtomMass, mCustomAtomValence, mCustomAtomRadical,
-			mCurrentHiliteAtom, mCurrentHiliteBond, mPendingRequest, mEventsScheduled,
-			mCurrentCursor, mReactantCount, mUpdateMode, mDisplayMode, mAtom1, mAtom2, mMaxAVBL;
+			mCurrentHiliteAtom, mCurrentHiliteBond, mPendingRequest, mEventsScheduled, mFirstAtomKey,
+			mCurrentCursor, mReactantCount, mUpdateMode, mDisplayMode, mAtom1, mAtom2, mMaxAVBL, mAllowedPseudoAtoms;
 	private int[] mChainAtom, mFragmentNo, mHiliteBondSet;
-	private double mX1, mY1, mX2, mY2, mWidth, mHeight, mUIScaling;
+	private double mX1, mY1, mX2, mY2, mWidth, mHeight, mUIScaling, mTextSizeFactor;
 	private double[] mX, mY, mChainAtomX, mChainAtomY;
-	private boolean mAltIsDown, mShiftIsDown, mMouseIsDown, mIsAddingToSelection, mAtomColorSupported, mAllowQueryFeatures;
+	private boolean mAltIsDown, mShiftIsDown, mMouseIsDown, mIsAddingToSelection, mAtomColorSupported, mAllowQueryFeatures,
+			mAllowFragmentChangeOnPasteOrDrop;
 	private boolean[] mIsSelectedAtom, mIsSelectedObject;
 	private String mCustomAtomLabel,mWarningMessage,mAtomKeyStrokeSuggestion;
 	private String[] mAtomText;
@@ -185,9 +197,14 @@ public class GenericEditorArea implements GenericEventListener {
 		mCustomAtomRadical = 0;
 		mCustomAtomLabel = null;
 		mAllowQueryFeatures = true;
+		mAllowFragmentChangeOnPasteOrDrop = false;
 		mPendingRequest = cRequestNone;
 		mCurrentCursor = SwingCursorHelper.cPointerCursor;
 		mAtomKeyStrokeBuffer = new StringBuilder();
+
+		mAllowedPseudoAtoms = DEFAULT_ALLOWED_PSEUDO_ATOMS;
+
+		mTextSizeFactor = 1.0;
 
 		mUIScaling = HiDPIHelper.getUIScaleFactor();
 		mMaxAVBL = HiDPIHelper.scale(AbstractDepictor.cOptAvBondLen);
@@ -211,6 +228,20 @@ public class GenericEditorArea implements GenericEventListener {
 		dumpBytesOfGif("/lassoPlusCursor.gif");
 		dumpBytesOfGif("/rectCursor.gif");
 		dumpBytesOfGif("/rectPlusCursor.gif");	*/
+	}
+
+	/**
+	 * @return null or String[n][2] with pairs of reaction name and rxn-idcode
+	 */
+	public static String[][] getReactionQueryTemplates() {
+		return sReactionQueryTemplates;
+	}
+
+	/**
+	 * @param templates null or String[n][2] with pairs of reaction name and rxn-idcode
+	 */
+	public static void setReactionQueryTemplates(String[][] templates) {
+		sReactionQueryTemplates = templates;
 	}
 
 	public GenericUIHelper getUIHelper() {
@@ -263,7 +294,7 @@ public class GenericEditorArea implements GenericEventListener {
 		boolean isScaledView = false;
 		if (mUpdateMode != UPDATE_NONE) {
 			if ((mMode & MODE_MULTIPLE_FRAGMENTS) != 0
-					&& mUpdateMode != UPDATE_SCALE_COORDS_USE_FRAGMENTS)
+			 && mUpdateMode != UPDATE_SCALE_COORDS_USE_FRAGMENTS)
 				analyzeFragmentMembership();
 
 			mDepictor = ((mMode & MODE_REACTION) != 0) ?
@@ -275,10 +306,13 @@ public class GenericEditorArea implements GenericEventListener {
 					: new ExtendedDepictor(mMol, mDrawingObjectList);
 
 			mDepictor.setForegroundColor(foreground, background);
+			mDepictor.setDefaultAVBL(mMaxAVBL);
 
 			mDepictor.setFragmentNoColor(((mMode & MODE_MULTIPLE_FRAGMENTS) == 0) ? 0
 					: LookAndFeelHelper.isDarkLookAndFeel() ? ColorHelper.brighter(background, 0.85f)
 					: ColorHelper.darker(background, 0.85f));
+
+			mDepictor.setFactorTextSize(mTextSizeFactor);
 
 			mDepictor.setDisplayMode(mDisplayMode
 					| AbstractDepictor.cDModeHiliteAllQueryFeatures
@@ -333,7 +367,7 @@ public class GenericEditorArea implements GenericEventListener {
 			context.setRGB((validity == KEY_IS_ATOM_LABEL) ? foreground
 						   : (validity == KEY_IS_SUBSTITUENT) ? RGB_BLUE : RGB_GRAY);
 			if (validity == KEY_IS_ATOM_LABEL)
-				s = Molecule.cAtomLabel[Molecule.getAtomicNoFromLabel(s)];
+				s = Molecule.cAtomLabel[Molecule.getAtomicNoFromLabel(s, mAllowedPseudoAtoms)];
 			else if (validity == KEY_IS_SUBSTITUENT)
 				s = mAtomKeyStrokeSuggestion.substring(0, s.length());
 			int fontSize = 3*context.getFontSize()/2;
@@ -590,6 +624,8 @@ public class GenericEditorArea implements GenericEventListener {
 			copy();
 		} else if (command.equals(ITEM_PASTE_REACTION)) {
 			pasteReaction();
+		} else if (command.startsWith(ITEM_USE_TEMPLATE)) {
+			useTemplate(command.substring(ITEM_USE_TEMPLATE.length()));
 		} else if (command.startsWith(ITEM_PASTE_STRUCTURE)) {
 			pasteMolecule();
 		} else if (command.equals(ITEM_LOAD_REACTION)) {
@@ -605,6 +641,8 @@ public class GenericEditorArea implements GenericEventListener {
 			flip(false);
 		} else if (command.equals(ITEM_FLIP_ROTATE180)) {
 			rotate180();
+		} else if (command.equals(ITEM_SHOW_HELP)) {
+			showHelpDialog();
 		} else if (command.startsWith("atomColor")) {
 			int index = command.indexOf(':');
 			int atom = Integer.parseInt(command.substring(9, index));
@@ -778,9 +816,10 @@ public class GenericEditorArea implements GenericEventListener {
 		if (mClipboardHandler != null) {
 			Reaction rxn = mClipboardHandler.pasteReaction();
 			if (rxn != null) {
-				for (int i = 0; i<rxn.getMolecules(); i++) {
-					rxn.getMolecule(i).setFragment(mMol.isFragment());
-				}
+				if (!mAllowFragmentChangeOnPasteOrDrop)
+					for (int i = 0; i<rxn.getMolecules(); i++)
+						rxn.getMolecule(i).setFragment(mMol.isFragment());
+
 				storeState();
 				setReaction(rxn);
 				ret = true;
@@ -821,16 +860,19 @@ public class GenericEditorArea implements GenericEventListener {
 		mol.removeAtomColors();
 		mol.removeBondHiliting();
 
+		boolean editorIsFragment = mMol.isFragment();
 		if (mMol.getAllAtoms() == 0) {
-			boolean isFragment = mMol.isFragment();
 			mol.copyMolecule(mMol);
-			mMol.setFragment(isFragment);
+			if (!mAllowFragmentChangeOnPasteOrDrop)
+				mMol.setFragment(editorIsFragment);
 			updateAndFireEvent(UPDATE_SCALE_COORDS);
 		} else {
 			if (p != null)
 				mol.translateCoords(p.x - mCanvas.getCanvasWidth()/2, p.y - mCanvas.getCanvasHeight()/2);
 			int originalAtoms = mMol.getAllAtoms();
 			mMol.addMolecule(mol);
+			if (!mAllowFragmentChangeOnPasteOrDrop)
+				mMol.setFragment(editorIsFragment);
 			for (int atom = 0; atom<mMol.getAllAtoms(); atom++)
 				mMol.setAtomSelection(atom, atom>=originalAtoms);
 
@@ -838,6 +880,11 @@ public class GenericEditorArea implements GenericEventListener {
 			}
 
 		return true;
+		}
+
+	private void useTemplate(String rxncode) {
+		storeState();
+		setReaction(ReactionEncoder.decode(rxncode, true));
 		}
 
 	private boolean atomCoordinatesCollide(StereoMolecule mol, double tolerance) {
@@ -1237,7 +1284,20 @@ public class GenericEditorArea implements GenericEventListener {
 			} else if (mCurrentHiliteAtom != -1) {
 				int ch = e.getKey();
 				boolean isFirst = (mAtomKeyStrokeBuffer.length() == 0);
-				if (isFirst && (ch == '+' || ch == '-')) {
+				if (isFirst)
+					mFirstAtomKey = ch;
+				else {
+					if (mFirstAtomKey == 'l') { // if we don't want first 'l' to be a chlorine
+						mAtomKeyStrokeBuffer.setLength(0);
+						mAtomKeyStrokeBuffer.append('L');
+						}
+					mFirstAtomKey = -1;
+					}
+
+				if (isFirst && ch == 'l') { // if no chars are following, we interpret 'l' as chlorine analog to ChemDraw
+					mAtomKeyStrokeBuffer.append("Cl");
+					update(UPDATE_REDRAW);
+				} else if (isFirst && (ch == '+' || ch == '-')) {
 					storeState();
 					if (mMol.changeAtomCharge(mCurrentHiliteAtom, ch == '+'))
 						updateAndFireEvent(UPDATE_CHECK_COORDS);
@@ -1253,11 +1313,13 @@ public class GenericEditorArea implements GenericEventListener {
 							: (mMol.getAtomRadical(mCurrentHiliteAtom) == Molecule.cAtomRadicalStateS) ? 0 : Molecule.cAtomRadicalStateT;
 					mMol.setAtomRadical(mCurrentHiliteAtom, newRadical);
 					updateAndFireEvent(UPDATE_CHECK_COORDS);
-				} else if (isFirst && ch == 'l') {
-					mAtomKeyStrokeBuffer.append("Cl");
-					update(UPDATE_REDRAW);
 				} else if (isFirst && ch == 'q' && mMol.isFragment()) {
 					showAtomQFDialog(mCurrentHiliteAtom);
+
+				} else if (isFirst && mMol.isFragment() && (ch == 'x' || ch == 'X')) {
+					int[] list = { 9, 17, 35, 53 };
+					mMol.setAtomList(mCurrentHiliteAtom, list);
+					updateAndFireEvent(UPDATE_CHECK_COORDS);
 				} else if (isFirst && ch == '?') {
 					storeState();
 					if (mMol.changeAtom(mCurrentHiliteAtom, 0, 0, -1, 0)) {
@@ -1336,11 +1398,34 @@ public class GenericEditorArea implements GenericEventListener {
 			String item1 = analyseCopy(false) ? ITEM_COPY_REACTION : ITEM_COPY_STRUCTURE;
 			popup.addItem(item1, null, mMol.getAllAtoms() != 0);
 
-			if ((mMode & MODE_REACTION) != 0)
-				popup.addItem(ITEM_PASTE_REACTION, null, true);
-
 			String item3 = (StructureNameResolver.getInstance() == null) ? ITEM_PASTE_STRUCTURE : ITEM_PASTE_WITH_NAME;
 			popup.addItem(item3, null, true);
+
+			if ((mMode & MODE_REACTION) != 0) {
+				popup.addItem(ITEM_PASTE_REACTION, null, true);
+				popup.addSeparator();
+				if (sReactionQueryTemplates != null && mMol.isFragment()) {
+					boolean isSubMenu = false;
+					for (String[] template: sReactionQueryTemplates) {
+						if (TEMPLATE_SECTION_KEY.equals(template[0])) {
+							if (isSubMenu)
+								popup.endSubMenu();
+
+							popup.startSubMenu("Use " + template[1] + " Template");
+							isSubMenu = true;
+							continue;
+							}
+
+						if (!isSubMenu) {
+							popup.startSubMenu("Use Template");
+							isSubMenu = true;
+							}
+
+						popup.addItem(template[0], ITEM_USE_TEMPLATE + template[1], true);
+						}
+					popup.endSubMenu();
+					}
+				}
 
 			if ((mMode & MODE_REACTION) != 0)
 				popup.addItem(ITEM_LOAD_REACTION, null, true);
@@ -1385,6 +1470,12 @@ public class GenericEditorArea implements GenericEventListener {
 			popup.addRadioButtonItem("	  ", "atomColor" + mCurrentHiliteAtom + ":" + Molecule.cAtomColorOrange, AbstractDepictor.COLOR_ORANGE, atomColor == Molecule.cAtomColorOrange);
 			popup.endSubMenu();
 			}
+
+		if (popup == null)
+			popup = mUIHelper.createPopupMenu(this);
+		else
+			popup.addSeparator();
+		popup.addItem(ITEM_SHOW_HELP, null, true);
 
 		if (System.getProperty("development") != null) {
 			if (popup == null)
@@ -2496,11 +2587,11 @@ public class GenericEditorArea implements GenericEventListener {
 
 			mCurrentHiliteAtom = theAtom;
 			mAtomKeyStrokeBuffer.setLength(0);
-			fireEventLater(new EditorEvent(this, EditorEvent.WHAT_HILITE_ATOM_CHANGED, true));  //TODO
+			fireEventLater(new EditorEvent(this, EditorEvent.WHAT_HILITE_ATOM_CHANGED, true));
 		}
 		if (mCurrentHiliteBond != theBond) {
 			mCurrentHiliteBond = theBond;
-			fireEventLater(new EditorEvent(this, EditorEvent.WHAT_HILITE_BOND_CHANGED, true));  //TODO
+			fireEventLater(new EditorEvent(this, EditorEvent.WHAT_HILITE_BOND_CHANGED, true));
 		}
 		mCurrentHiliteObject = hiliteObject;
 
@@ -2508,7 +2599,7 @@ public class GenericEditorArea implements GenericEventListener {
 	}
 
 	private int getAtomKeyStrokeValidity(String s){
-		if (Molecule.getAtomicNoFromLabel(s) != 0)
+		if (Molecule.getAtomicNoFromLabel(s, mAllowedPseudoAtoms) != 0)
 			return KEY_IS_ATOM_LABEL;
 		mAtomKeyStrokeSuggestion = NamedSubstituents.identify(s);
 		if (mAtomKeyStrokeSuggestion == null)
@@ -2523,7 +2614,7 @@ public class GenericEditorArea implements GenericEventListener {
 	 * @param s
 	 * @return true if adding one or more chars may still create a valid key stroke sequence
 	 */
-	private boolean isValidAtomKeyStrokeStart (String s){
+	private boolean isValidAtomKeyStrokeStart(String s){
 		if (s.length()<3)
 			for (int i=1; i<Molecule.cAtomLabel.length; i++)
 				if (Molecule.cAtomLabel[i].startsWith(s))
@@ -2532,10 +2623,10 @@ public class GenericEditorArea implements GenericEventListener {
 		return false;
 	}
 
-	private void expandAtomKeyStrokes (String keyStrokes){
+	private void expandAtomKeyStrokes(String keyStrokes){
 		mAtomKeyStrokeBuffer.setLength(0);
 
-		int atomicNo = Molecule.getAtomicNoFromLabel(keyStrokes);
+		int atomicNo = Molecule.getAtomicNoFromLabel(keyStrokes, mAllowedPseudoAtoms);
 		if (atomicNo != 0) {
 			storeState();
 			if (mMol.changeAtom(mCurrentHiliteAtom, atomicNo, 0, -1, 0)) {
@@ -2579,6 +2670,14 @@ public class GenericEditorArea implements GenericEventListener {
 
 			updateAndFireEvent(UPDATE_CHECK_COORDS);
 		}
+	}
+
+	public int getAllowedPseudoAtoms() {
+		return mAllowedPseudoAtoms;
+	}
+
+	public void setAllowedPseudoAtoms(int apa) {
+		mAllowedPseudoAtoms = apa;
 	}
 
 	private AbstractDrawingObject findDrawingObject ( double x, double y, String type,boolean forDeletion){
@@ -2770,10 +2869,10 @@ public class GenericEditorArea implements GenericEventListener {
 		if (mMol == theMolecule) {
 			return;
 		}
+		storeState();
 		mMol = theMolecule;
 		mMode = 0;
 		mDrawingObjectList = null;
-		storeState();
 		moleculeChanged();
 	}
 
@@ -2832,7 +2931,7 @@ public class GenericEditorArea implements GenericEventListener {
 		return rxn;
 	}
 
-	public void setReaction (Reaction rxn){
+	public void setReaction (Reaction rxn) {
 		mMol.clear();
 		mFragment = new StereoMolecule[rxn.getMolecules()];
 		mReactantCount = rxn.getReactants();
@@ -2875,6 +2974,7 @@ public class GenericEditorArea implements GenericEventListener {
 
 	public void setMarkushStructure (MarkushStructure markush){
 		mMol.clear();
+		mDrawingObjectList = null;
 		mFragment = new StereoMolecule[markush.getCoreCount() + markush.getRGroupCount()];
 		mReactantCount = markush.getCoreCount();
 		boolean isFragment = false;
@@ -2908,6 +3008,11 @@ public class GenericEditorArea implements GenericEventListener {
 		update(UPDATE_REDRAW);
 	}
 
+	public void setTextSizeFactor(double factor) {
+		mTextSizeFactor = factor;
+		update(UPDATE_REDRAW);
+	}
+
 	/**
 	 * If set to false then any query features will be removed from the molecule
 	 * and any functionality that allows to define atom- or bond-query features
@@ -2920,6 +3025,20 @@ public class GenericEditorArea implements GenericEventListener {
 			if (!allow)
 				mMol.removeQueryFeatures();
 		}
+	}
+
+	/**
+	 * In case a molecule/reaction is pasted into or dropped onto the editor area,
+	 * then the fragment state of the editor area stays unchanged even if it is empty.
+	 * If this method has been called with parameter 'true' then the behaviour changes as follows:
+	 * If a query molecule/reaction (fragment==true) is pasted/dropped, then the editor's
+	 * fragment state is set to true. If a non-fragment molecule/reaction is pasted/dropped
+	 * then the editor's fragment state stays unchanged unless the editor area is empty,
+	 * in which case the fragment state of the dropped object will be retained.
+	 * @param b
+	 */
+	public void setAllowFragmentChangeOnPasteOrDrop(boolean b) {
+		mAllowFragmentChangeOnPasteOrDrop = b;
 	}
 
 	/**
@@ -3024,7 +3143,7 @@ public class GenericEditorArea implements GenericEventListener {
 				mCanvas.getCanvasHeight()), AbstractDepictor.cModeInflateToMaxAVBL | mMaxAVBL);
 	}
 
-	private void cleanupMultiFragmentCoordinates(GenericDrawContext context, boolean selectedOnly){
+	private void cleanupMultiFragmentCoordinates(GenericDrawContext context, boolean selectedOnly) {
 		if (selectedOnly && mUpdateMode == UPDATE_INVENT_COORDS) {
 			int[] fragmentAtom = new int[mFragment.length];
 			for (int atom = 0; atom<mMol.getAllAtoms(); atom++) {
@@ -3049,8 +3168,7 @@ public class GenericEditorArea implements GenericEventListener {
 
 		double spacing = FRAGMENT_CLEANUP_DISTANCE * mMaxAVBL;
 		double avbl = getScaledAVBL();
-		double arrowWidth = ((mMode & MODE_REACTION) == 0) ?
-				0f
+		double arrowWidth = ((mMode & MODE_REACTION) == 0) ? 0f
 				: (mUpdateMode == UPDATE_SCALE_COORDS_USE_FRAGMENTS) ?
 				DEFAULT_ARROW_LENGTH * mCanvas.getCanvasWidth()
 				: ((ReactionArrow)mDrawingObjectList.get(0)).getLength() * mMaxAVBL / avbl;
@@ -3090,7 +3208,7 @@ public class GenericEditorArea implements GenericEventListener {
 		mMol.setStereoBondsFromParity();
 	}
 
-	private void analyzeFragmentMembership () {
+	private void analyzeFragmentMembership() {
 		mMol.ensureHelperArrays(Molecule.cHelperParities);
 
 		int[] fragmentNo = new int[mMol.getAllAtoms()];

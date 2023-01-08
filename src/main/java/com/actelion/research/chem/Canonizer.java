@@ -2936,7 +2936,7 @@ System.out.print("BondOrders:");
 			int bondOrder = ((mMol.getBondQueryFeatures(mGraphBond[bond]) & Molecule.cBondQFBridge) != 0
 						  || mMol.getBondType(mGraphBond[bond]) == Molecule.cBondTypeMetalLigand) ?
 							1 : (mMol.isDelocalizedBond(mGraphBond[bond])) ?
-							0 : mMol.getBondOrder(mGraphBond[bond]);
+							0 : Math.min(3, mMol.getBondOrder(mGraphBond[bond]));
 			encodeBits(bondOrder, 2);
 //System.out.print(bondOrder + ";");
 			}
@@ -3262,6 +3262,27 @@ System.out.println();
 			addAtomQueryFeatures(29, nbits, Molecule.cAtomQFRxnParityHint, Molecule.cAtomQFRxnParityBits, Molecule.cAtomQFRxnParityShift);
 			addAtomQueryFeatures(30, nbits, Molecule.cAtomQFNewRingSize, Molecule.cAtomQFNewRingSizeBits, Molecule.cAtomQFNewRingSizeShift);
 			addAtomQueryFeatures(32, nbits, Molecule.cAtomQFStereoState, Molecule.cAtomQFStereoStateBits, Molecule.cAtomQFStereoStateShift);
+			addAtomQueryFeatures(33, nbits, Molecule.cAtomQFENeighbours, Molecule.cAtomQFENeighbourBits, Molecule.cAtomQFENeighbourShift);
+			addAtomQueryFeatures(34, nbits, Molecule.cAtomQFHeteroAromatic, 1, -1);
+			addBondQueryFeatures(35, nbits, Molecule.cBondQFMatchFormalOrder, 1, -1);
+			addBondQueryFeatures(36, nbits, Molecule.cBondQFRareBondTypes, Molecule.cBondQFRareBondTypesBits, Molecule.cBondQFRareBondTypesShift);
+			}
+
+		count = 0;
+		for (int bond=0; bond<mMol.getBonds(); bond++)
+			if (mMol.getBondType(mGraphBond[bond]) == Molecule.cBondTypeQuadruple
+			 || mMol.getBondType(mGraphBond[bond]) == Molecule.cBondTypeQuintuple)
+				count++;
+		if (count != 0) {
+			encodeFeatureNo(37);    // 37 = datatype 'rare order bond'
+			encodeBits(count, nbits);
+			for (int bond=0; bond<mMol.getBonds(); bond++) {
+				if (mMol.getBondType(mGraphBond[bond]) == Molecule.cBondTypeQuadruple
+				 || mMol.getBondType(mGraphBond[bond]) == Molecule.cBondTypeQuintuple) {
+					encodeBits(bond, nbits);
+					encodeBits(mMol.getBondType(mGraphBond[bond]) == Molecule.cBondTypeQuadruple ? 0 : 1, 1);
+					}
+				}
 			}
 
 		encodeBits(0, 1);

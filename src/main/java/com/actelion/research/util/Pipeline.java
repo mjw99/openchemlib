@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 /**
  * 
@@ -48,7 +49,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Mar 27, 2012 MvK: Start implementation
  * Oct 9 2012 MvK: bug fix, added reset()
  */
-public class Pipeline<T> implements IPipeline<T> {
+public class Pipeline<T> implements IPipeline<T>, Supplier<T> {
 
 	private AtomicBoolean allDataIn;
 	
@@ -59,15 +60,10 @@ public class Pipeline<T> implements IPipeline<T> {
 	private AtomicLong polled;
 	
 	public Pipeline() {
-		
 		allDataIn = new AtomicBoolean(false);
-		
 		queue = new ConcurrentLinkedQueue<T>();
-		
 		added = new AtomicLong();
-		
 		polled = new AtomicLong();
-		
 	}
 	
 	/**
@@ -120,15 +116,31 @@ public class Pipeline<T> implements IPipeline<T> {
 	 * @return null if nothing is in the queue.
 	 */
 	public T pollData() {
-		
 		T t = queue.poll();
-		
 		if(t!=null)
 			polled.incrementAndGet();
-		
 		return t;
 	}
-	
+
+	@Override
+	public T get() {
+
+		if(wereAllDataFetched())
+			return null;
+
+		T row = null;
+
+		while(row == null){
+			row = pollData();
+			if(row==null){
+				try {Thread.sleep(10);} catch (InterruptedException e) {e.printStackTrace();}
+				continue;
+			}
+		}
+
+		return row;
+	}
+
 	public int sizePipe(){
 		return queue.size();
 	}
@@ -193,11 +205,9 @@ public class Pipeline<T> implements IPipeline<T> {
 	 * Returns true if all data in was set and the queue is empty.
 	 */
 	public boolean wereAllDataFetched() {
-		
 		if(!isAllDataIn()){
 			return false;
 		}
-		
 		return queue.isEmpty();
 	}
 

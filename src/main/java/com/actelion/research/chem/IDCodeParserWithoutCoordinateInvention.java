@@ -84,6 +84,13 @@ public class IDCodeParserWithoutCoordinateInvention {
 	 * @return
 	 */
 	public StereoMolecule getCompactMolecule(byte[] idcode) {
+		if (idcode == null || idcode.length == 0)
+			return null;
+
+		for (int i=2; i<idcode.length-2; i++)
+			if (idcode[i] == ' ')
+				return getCompactMolecule(idcode, idcode, 0, i+1);
+
 		return getCompactMolecule(idcode, null);
 		}
 
@@ -211,13 +218,13 @@ public class IDCodeParserWithoutCoordinateInvention {
 	public void parse(StereoMolecule mol, byte[] idcode, byte[] coordinates, int idcodeStart, int coordsStart) {
 		mol.clear();
 
-		if (idcode==null || idcodeStart >= idcode.length)
+		if (idcode==null || idcodeStart < 0 || idcodeStart >= idcode.length)
 			return;
 
 		mMol = mol;
 		int version = Canonizer.cIDCodeVersion2;
 
-		if (coordinates != null && coordsStart >= coordinates.length)
+		if (coordinates != null && (coordsStart < 0 || coordsStart >= coordinates.length))
 			coordinates = null;
 
 		decodeBitsStart(idcode, idcodeStart);
@@ -261,7 +268,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 		mMol.setAtomY(0, 0.0);
 		mMol.setAtomZ(0, 0.0);
 
-		boolean decodeOldCoordinates = (coordinates != null && coordinates[0] >= '\'');
+		boolean decodeOldCoordinates = (coordinates != null && coordinates[coordsStart] >= '\'');
 		double targetAVBL = 0.0;
 		double xOffset = 0.0;
 		double yOffset = 0.0;
@@ -656,7 +663,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 				no = decodeBits(abits);
 				for (int i=0; i<no; i++) {
 					int atom = decodeBits(abits);
-					long hint = decodeBits(Molecule.cAtomQFRxnParityBits) << Molecule.cAtomQFRxnParityShift;
+					long hint = (long)decodeBits(Molecule.cAtomQFRxnParityBits) << Molecule.cAtomQFRxnParityShift;
 					mMol.setAtomQueryFeature(atom, hint, true);
 					}
 				break;
@@ -674,6 +681,44 @@ public class IDCodeParserWithoutCoordinateInvention {
 					int atom = decodeBits(abits);
 					long stereoState = (long)decodeBits(Molecule.cAtomQFStereoStateBits) << Molecule.cAtomQFStereoStateShift;
 					mMol.setAtomQueryFeature(atom, stereoState, true);
+					}
+				break;
+			case 33: //  datatype 'AtomQFENeighbours'
+				no = decodeBits(abits);
+				for (int i=0; i<no; i++) {
+					int atom = decodeBits(abits);
+					long eNeighbours = (long)decodeBits(Molecule.cAtomQFENeighbourBits) << Molecule.cAtomQFENeighbourShift;
+					mMol.setAtomQueryFeature(atom, eNeighbours, true);
+					}
+				break;
+			case 34:	//	datatype 'AtomQFHetereoAromatic'
+				no = decodeBits(abits);
+				for (int i=0; i<no; i++) {
+					int atom = decodeBits(abits);
+					mMol.setAtomQueryFeature(atom, Molecule.cAtomQFHeteroAromatic, true);
+					}
+				break;
+			case 35:	//	datatype 'BondQFMatchFormalOrder'
+				no = decodeBits(bbits);
+				for (int i=0; i<no; i++) {
+					int bond = decodeBits(bbits);
+					mMol.setBondQueryFeature(bond, Molecule.cBondQFMatchFormalOrder, true);
+					}
+				break;
+			case 36:	//	datatype 'cBondQFRareBondType'
+				no = decodeBits(bbits);
+				for (int i=0; i<no; i++) {
+					int bond = decodeBits(bbits);
+					int bondType = decodeBits(Molecule.cBondQFRareBondTypesBits) << Molecule.cBondQFRareBondTypesShift;
+					mMol.setBondQueryFeature(bond, bondType, true);
+					}
+				break;
+			case 37:	//	datatype 'rare order bond'
+				no = decodeBits(bbits);
+				for (int i=0; i<no; i++) {
+					int bond = decodeBits(bbits);
+					int bondType = decodeBits(1) == 0 ? Molecule.cBondTypeQuadruple : Molecule.cBondTypeQuintuple;
+					mMol.setBondType(bond, bondType);
 					}
 				break;
 				}
@@ -1491,14 +1536,14 @@ public class IDCodeParserWithoutCoordinateInvention {
 						no = decodeBits(abits);
 						System.out.print("AtomQFFlatNitrogen:");
 						for (int i = 0; i < no; i++)
-							System.out.print(" " + decodeBits(abits) + ":true");
+							System.out.print(" " + decodeBits(abits));
 						System.out.println();
 						break;
 					case 23:    //	datatype 'cBondQFMatchStereo'
 						no = decodeBits(bbits);
 						System.out.print("cBondQFMatchStereo:");
 						for (int i = 0; i < no; i++)
-							System.out.print(" " + decodeBits(abits) + ":true");
+							System.out.print(" " + decodeBits(abits));
 						System.out.println();
 						break;
 					case 24:    //	datatype 'cBondQFAromatic'
@@ -1525,7 +1570,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 						no = decodeBits(abits);
 						System.out.print("AtomQFExcludeGroup:");
 						for (int i = 0; i < no; i++)
-							System.out.print(" " + decodeBits(abits) + ":true");
+							System.out.print(" " + decodeBits(abits));
 						System.out.println();
 						break;
 					case 28:    //	datatype 'coordinate bond'
@@ -1556,8 +1601,42 @@ public class IDCodeParserWithoutCoordinateInvention {
 							System.out.print(" " + decodeBits(abits) + ":" + decodeBits(Molecule.cAtomQFStereoStateBits));
 						System.out.println();
 						break;
+					case 33: //  datatype 'AtomQFENeighbours'
+						no = decodeBits(abits);
+						System.out.print("AtomQFENeighbours:");
+						for (int i = 0; i < no; i++)
+							System.out.print(" " + decodeBits(abits) + ":" + decodeBits(Molecule.cAtomQFENeighbourBits));
+						System.out.println();
+						break;
+					case 34:    //	datatype 'in hetero aromatic ring'
+						no = decodeBits(abits);
+						System.out.print("AtomQFHeteroAromatic:");
+						for (int i = 0; i < no; i++)
+							System.out.print(" " + decodeBits(abits));
+						System.out.println();
+						break;
+					case 35:    //	datatype 'cBondQFMatchFormalOrder'
+						no = decodeBits(bbits);
+						System.out.print("BondQFMatchFormalOrder:");
+						for (int i = 0; i < no; i++)
+							System.out.print(" " + decodeBits(abits));
+						System.out.println();
+						break;
+					case 36:    //	datatype 'cBondQFRareBondType'
+						no = decodeBits(bbits);
+						System.out.print("BondQFRareBondType:");
+						for (int i = 0; i < no; i++)
+							System.out.print(" " + decodeBits(bbits) + ":" + decodeBits(Molecule.cBondQFRareBondTypesBits));
+						System.out.println();
+						break;
+					case 37:    // datatype 'rare bond type'
+						no = decodeBits(bbits);
+						System.out.print("Rare Bond Type:");
+						for (int i=0; i<no; i++)
+							System.out.print(" " + decodeBits(bbits) + ":" + (decodeBits(1) == 0 ? "quadruple" : "quintuple"));
+						break;
+					}
 				}
-			}
 
 			if (coordinates != null) {
 				if (coordinates[0] == '!' || coordinates[0] == '#') {    // new coordinate format

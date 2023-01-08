@@ -29,11 +29,13 @@ import java.util.List;
  */
 public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveCompleteGraph<IMolDistHist>{
 
-	public static final String VERSION = "02.04.2020 08:00";
+	public static final String VERSION = "07.09.2022";
 	public static final String INFO = "";
 
 	// 0.15 best thresh tested on 31.03.2016
 	public final static double THRESH_HISTOGRAM_SIMILARITY	= 0.15;
+
+	public final static double THRESH_HISTOGRAM_SIMILARITY_OPTIMISTIC	= 0.0000001;
 
 
 	// The thresh for the node similarity depends on the number of interaction types in the node.
@@ -46,6 +48,8 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 
 
 	private boolean modeQuery;
+
+	private int marginQuery;
 
 	private MolDistHistViz mdhvBase;
 	private MolDistHistViz mdhvBaseBlurredHist;
@@ -70,6 +74,13 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 	private double threshHistogramSimilarity;
 
 	private PPNodeSimilarity nodeSimilarity;
+
+	private boolean optimisticHistogramSimilarity;
+
+	private boolean excludeHistogramSimilarity;
+
+	// For small Flexophore descriptor comparison.
+	private boolean fragmentNodesMapping;
 
 	boolean verbose;
 
@@ -104,12 +115,14 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 	private long deltaNanoBaseBlur;
 	private long deltaNanoSimilarity;
 
+
 	private SlidingWindowDistHist slidingWindowDistHist;
 
 	public ObjectiveBlurFlexophoreHardMatchUncovered(){
 		this(DescriptorHandlerFlexophore.VERSION_INTERACTION_TABLES,
 				DescriptorHandlerFlexophore.MODE_PPNODE_SIMILARITY_COMPARISON,
-				DescriptorHandlerFlexophore.THRESH_SIMILARITY_COMPARISON_NODE, THRESH_HISTOGRAM_SIMILARITY);
+				DescriptorHandlerFlexophore.THRESH_SIMILARITY_COMPARISON_NODE,
+				THRESH_HISTOGRAM_SIMILARITY);
 
 	}
 
@@ -129,9 +142,37 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		deltaNanoQueryBlur=0;
 		deltaNanoBaseBlur=0;
 		deltaNanoSimilarity=0;
+		setFragmentNodesMapping(false);
+		setOptimisticHistogramSimilarity(false);
+		marginQuery = 0;
+		excludeHistogramSimilarity=false;
 		initSimilarityMatrices();
+
 	}
-	
+
+	public void setFragmentNodesMapping(boolean fragmentNodesMapping) {
+		this.fragmentNodesMapping = fragmentNodesMapping;
+	}
+
+	public void setMarginQuery(int marginQuery) {
+		this.marginQuery = marginQuery;
+	}
+
+	/**
+	 * An overlap of two compared histograms is scored as a full match.
+	 * @param optimisticHistogramSimilarity
+	 */
+	public void setOptimisticHistogramSimilarity(boolean optimisticHistogramSimilarity) {
+		this.optimisticHistogramSimilarity = optimisticHistogramSimilarity;
+		if(optimisticHistogramSimilarity){
+			threshHistogramSimilarity = THRESH_HISTOGRAM_SIMILARITY_OPTIMISTIC;
+		}
+	}
+
+	public void setExcludeHistogramSimilarity(boolean excludeHistogramSimilarity) {
+		this.excludeHistogramSimilarity = excludeHistogramSimilarity;
+	}
+
 	private void initSimilarityMatrices(){
 		
 		arrSimilarityNodes = new float [ConstantsFlexophore.MAX_NUM_NODES_FLEXOPHORE][];
@@ -243,9 +284,9 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		}
 
 		//
-		// Check for one hetero atom in solution
-		//
-		if(mapping){
+		// Check for one hetero atom in solution.
+		// Not checked for fragment mapping!
+		if(!fragmentNodesMapping && mapping){
 			boolean heteroNodeQuery = false;
 			boolean heteroNodeBase = false;
 			for (int i = 0; i < heap; i++) {
@@ -288,7 +329,7 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		//
 		// Check for matching histograms.
 		//
-		if(mapping){
+		if(mapping && !excludeHistogramSimilarity){
 			outer:
 			for (int i = 0; i < heap; i++) {
 
@@ -371,7 +412,7 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		boolean match = true;
 
 		double simHistograms = getSimilarityHistogram(indexNode1Query, indexNode2Query, indexNode1Base, indexNode2Base);
-		
+
 		if(simHistograms < threshHistogramSimilarity){
 			match=false;
 		}
@@ -379,6 +420,11 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		return match;
 	}
 
+	/**
+	 * Calculates the similarity for the pharmacophore nodes and the distance histograms.
+	 * @param solution
+	 * @return
+	 */
 	public float getSimilarity(SolutionCompleteGraph solution) {
 
 		long t0 = System.nanoTime();
@@ -402,9 +448,18 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		//
 		if(modeQuery) {
 			if (nodesQuery != heap) {
-				return 0;
+				similarity=0;
+				return (float)similarity;
 			}
 		}
+
+		if(fragmentNodesMapping && heap==1){
+			int indexNodeQuery = solution.getIndexQueryFromHeap(0);
+			int indexNodeBase = solution.getIndexCorrespondingBaseNode(indexNodeQuery);
+			similarity = getSimilarityNodes(indexNodeQuery, indexNodeBase);
+			return (float)similarity;
+		}
+
 
 		double sumPairwiseMapping = 0;
 
@@ -452,8 +507,6 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 			similarity = avrPairwiseMappingScaled * coverage * ratioNodesMatchQuery * ratioNodesMatchBase;
 		}
 
-
-
 		if(verbose) {
 			StringBuilder sb = new StringBuilder();
 			sb.append("ObjectiveFlexophoreHardMatchUncovered");
@@ -488,6 +541,86 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		// return (float)1.0;
 
 	}
+	public float getSimilarityNodes(SolutionCompleteGraph solution) {
+
+		long t0 = System.nanoTime();
+
+		if(resetSimilarityArrays){
+			resetSimilarityMatrices();
+		}
+
+		int heap = solution.getSizeHeap();
+
+		//
+		// the query must hit with all pharmacophore nodes except margin. Margin gives the number of nodes that need
+		// not to hit.
+		//
+		if(modeQuery) {
+			if (Math.abs(nodesQuery-heap)>marginQuery) {
+				similarity=0;
+				return (float)similarity;
+			}
+		}
+
+		if(fragmentNodesMapping && heap==1){
+			int indexNodeQuery = solution.getIndexQueryFromHeap(0);
+			int indexNodeBase = solution.getIndexCorrespondingBaseNode(indexNodeQuery);
+			similarity = getSimilarityNodes(indexNodeQuery, indexNodeBase);
+			return (float)similarity;
+		}
+
+		double sumSimilarityNodes = 0;
+		for (int i = 0; i < heap; i++) {
+			int indexNodeQuery = solution.getIndexQueryFromHeap(i);
+			int indexNodeBase = solution.getIndexCorrespondingBaseNode(indexNodeQuery);
+			double similarityNodePair = getSimilarityNodes(indexNodeQuery, indexNodeBase);
+			sumSimilarityNodes += similarityNodePair;
+		}
+
+		double mappings = heap;
+		avrPairwiseMappingScaled = sumSimilarityNodes/mappings;
+		coverageQuery = 0;
+		coverageBase = 0;
+		double ratioNodesMatchQuery = Math.min(nodesQuery, heap) / (double)Math.max(nodesQuery, heap);
+		double ratioNodesMatchBase = Math.min(heap, nodesBase) / (double)Math.max(heap, nodesBase);
+
+		if(modeQuery) {
+			similarity = avrPairwiseMappingScaled * ratioNodesMatchQuery * ratioNodesMatchQuery;
+		} else {
+			similarity = avrPairwiseMappingScaled * ratioNodesMatchQuery * ratioNodesMatchBase;
+		}
+
+		if(verbose) {
+			StringBuilder sb = new StringBuilder();
+			sb.append("ObjectiveFlexophoreHardMatchUncovered");
+			sb.append(" similarity nodes");
+			sb.append("\t");
+			sb.append(Formatter.format2(similarity));
+			sb.append("\t");
+			sb.append("avrPairwiseMappingScaled");
+			sb.append("\t");
+			sb.append(Formatter.format2(avrPairwiseMappingScaled));
+			sb.append("\t");
+			sb.append("ratioNodesMatchQuery");
+			sb.append("\t");
+			sb.append(Formatter.format2(ratioNodesMatchQuery));
+			sb.append("\t");
+			sb.append("ratioNodesMatchBase");
+			sb.append("\t");
+			sb.append(Formatter.format2(ratioNodesMatchBase));
+
+			System.out.println(sb.toString());
+		}
+
+		deltaNanoSimilarity += System.nanoTime()-t0;
+
+		return (float)similarity;
+
+		// For testing
+		// return (float)1.0;
+
+	}
+
 
 	/**
 	 *
@@ -582,8 +715,13 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		}
 
 	}
-	
-	
+
+	@Override
+	public boolean isModeFragment() {
+		return fragmentNodesMapping;
+	}
+
+
 	public IMolDistHist getBase() {
 		return mdhvBase;
 	}
@@ -593,6 +731,10 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 	}
 
 	public void setBase(IMolDistHist iMolDistHistBase) {
+
+		if(iMolDistHistBase.getNumPPNodes()>=ConstantsFlexophore.MAX_NUM_NODES_FLEXOPHORE){
+			throw new RuntimeException("Number of base pharmacophore nodes (" +iMolDistHistBase.getNumPPNodes() + ") exceeds limit of " + ConstantsFlexophore.MAX_NUM_NODES_FLEXOPHORE + ".");
+		}
 
 		long t0 = System.nanoTime();
 
@@ -604,7 +746,9 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 			mdhvBaseBlurredHist = new MolDistHistViz((MolDistHist) iMolDistHistBase);
 		}
 
-		slidingWindowDistHist.apply(mdhvBaseBlurredHist);
+
+		if(!fragmentNodesMapping)
+			slidingWindowDistHist.apply(mdhvBaseBlurredHist);
 
 		nodesBase = iMolDistHistBase.getNumPPNodes();
 		
@@ -621,6 +765,10 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 	
 	public void setQuery(IMolDistHist iMolDistHistQuery) {
 
+		if(iMolDistHistQuery.getNumPPNodes()>=ConstantsFlexophore.MAX_NUM_NODES_FLEXOPHORE){
+			throw new RuntimeException("Number of query pharmacophore nodes (" +iMolDistHistQuery.getNumPPNodes() + ") exceeds limit of " + ConstantsFlexophore.MAX_NUM_NODES_FLEXOPHORE + ".");
+		}
+
 		long t0 = System.nanoTime();
 
 		if(iMolDistHistQuery instanceof MolDistHistViz) {
@@ -631,7 +779,8 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 			mdhvQueryBlurredHist = new MolDistHistViz((MolDistHist) iMolDistHistQuery);
 		}
 
-		slidingWindowDistHist.apply(mdhvQueryBlurredHist);
+		if(!fragmentNodesMapping)
+			slidingWindowDistHist.apply(mdhvQueryBlurredHist);
 
 		nodesQuery = iMolDistHistQuery.getNumPPNodes();
 		
@@ -872,11 +1021,12 @@ public class ObjectiveBlurFlexophoreHardMatchUncovered implements IObjectiveComp
 		double simNodePair2 = getSimilarityNodes(indexNode2Query, indexNode2Base);
 		
 		double simHists = getSimilarityHistogram(indexNode1Query, indexNode2Query, indexNode1Base, indexNode2Base);
-		
-//		if(simHists==0){
-//			System.out.println("ObjectiveFlexophoreHardMatchUncovered getScorePairwiseMapping(int indexNode1Query, int indexNode2Query, int indexNode1Base, int indexNode2Base)");
-//			System.out.println("Sim hists = 0");
-//		}
+
+		if(optimisticHistogramSimilarity) {
+			if (simHists > 0) {
+				simHists = 1.0;
+			}
+		}
 
 		if(verbose){
 			System.out.println("simHists " + Formatter.format2(simHists));
