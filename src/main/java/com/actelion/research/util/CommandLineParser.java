@@ -83,11 +83,9 @@ public class CommandLineParser {
     }
 
     public void add(String command, String value) {
-
         if(hmCommandValue.containsKey(command)){
             throw new RuntimeException("Contains already command " + command);
         }
-
         hmCommandValue.put(command,value);
     }
 
@@ -101,6 +99,28 @@ public class CommandLineParser {
             v=getAsInt(command);
         }
         return v;
+    }
+    public double getOrDefault(String command, double defaultVal){
+        double v=defaultVal;
+        if(contains(command)){
+            v=getAsInt(command);
+        }
+        return v;
+    }
+    public String getOrDefault(String command, String defaultVal){
+        String s=defaultVal;
+        if(contains(command)){
+            s=get(command);
+        }
+        return s;
+    }
+
+    public File getFileOrDefault(String command, File defaultVal){
+        File f=defaultVal;
+        if(contains(command)){
+            f=getAsFile(command);
+        }
+        return f;
     }
 
     public List<String> getAsList(String command) {

@@ -237,21 +237,30 @@ public class StatisticsOverview {
 
 	private static double getQuartile(double [] arr, double q) {
     	double v = 0;
-    	
-    	int p1 = (int)((q * arr.length) - 1);
-    	int p2 = (int)(q * arr.length);
-    	
-    	v = (arr[p1] + arr[p2]) / 2.0;
+
+		if(q<0){
+			throw new RuntimeException("Negative values are not allowed!");
+		}
+
+		if(arr.length % 2==0) {
+			if(((int)(q * arr.length))==0){
+				v = arr[0];
+			} else {
+				int p1 = (int) ((q * arr.length) - 1);
+				int p2 = (int) (q * arr.length);
+				v = (arr[p1] + arr[p2]) / 2.0;
+			}
+		} else {
+			int p = (int)(arr.length * q);
+			v = arr[p];
+		}
     	
     	return v;
     }
 
     public double getQuartile(double q) {
-    	
     	double [] arr = data.get();
-    	
     	Arrays.sort(arr);
-     	
     	return getQuartile(arr, q);
     }
 
@@ -305,10 +314,8 @@ public class StatisticsOverview {
 			sb.append("\t");
 			sb.append(Matrix.format(histTrans.get(i,2), dfBins, WIDTH));
 			sb.append("\n");
-			
 		}
-		
-		
+
 		return sb.toString();
 	}
 
@@ -346,11 +353,8 @@ public class StatisticsOverview {
 	}
 
 	public static ModelStatisticsOverviewMedian getMedianOverview(DoubleArray da){
-
 		StatisticsOverview statisticsOverview = new StatisticsOverview(da);
-
 		statisticsOverview.evaluate();
-
 		ModelStatisticsOverviewMedian model =
 				new ModelStatisticsOverviewMedian(
 						statisticsOverview.percentile05,
@@ -448,6 +452,4 @@ public class StatisticsOverview {
 
 		return sb.toString();
 	}
-
-
 }

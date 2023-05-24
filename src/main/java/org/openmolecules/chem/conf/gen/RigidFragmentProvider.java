@@ -28,6 +28,7 @@
 
 package org.openmolecules.chem.conf.gen;
 
+import com.actelion.research.calc.ThreadMaster;
 import com.actelion.research.chem.Canonizer;
 import com.actelion.research.chem.Coordinates;
 import com.actelion.research.chem.Molecule;
@@ -88,6 +89,7 @@ public class RigidFragmentProvider {
 	private long mRandomSeed;
 	private boolean mOptimizeFragments;
 	private RigidFragmentCache mCache;
+	private ThreadMaster mThreadMaster;
 
 	public RigidFragmentProvider(long randomSeed, RigidFragmentCache cache, boolean optimizeRigidFragments) {
 		mRandomSeed = randomSeed;
@@ -95,6 +97,15 @@ public class RigidFragmentProvider {
 		mOptimizeFragments = optimizeRigidFragments;
 		if (optimizeRigidFragments)
 			forceFieldInitialize();
+		}
+
+	/**
+	 * If the conformer generation must be stopped from outside, for instance because of user
+	 * intervention or because of a defined timeout, then provide a ThreadMaster with this method.
+	 * @param tm
+	 */
+	public void setThreadMaster(ThreadMaster tm) {
+		mThreadMaster = tm;
 		}
 
 	public void setCache(RigidFragmentCache cache) {
@@ -153,7 +164,7 @@ public class RigidFragmentProvider {
 		StereoMolecule fragment = new StereoMolecule(atomCount, bondCount);
 		mol.copyMoleculeByAtoms(fragment, includeAtom, false, null);
 
-		fragment.setFragment(true); // if can encode as fragment, because H-atoms are converted deuterium
+		fragment.setFragment(true); // Can encode as fragment, because H-atoms are converted to deuterium
 
 		int[] coreToFragmentAtom = new int[coreAtomCount];
 		int[] fragmentToOriginalAtom = new int[atomCount];
@@ -168,7 +179,12 @@ public class RigidFragmentProvider {
 				if (mol.isFlatNitrogen(atom))
 				    fragment.setAtomQueryFeature(fragmentAtom, Molecule.cAtomQFFlatNitrogen, true);
 
-				if (isOuterShellAtom[atom]) // for the ConformationSelfOrganizer to neglect
+				// The ConformationSelfOrganizer uses all torsions of qualifying rotatable bonds
+				// to check, whether a conformer is a new one. Bonds with marked atoms are excluded.
+				// We add two shells of atoms to simulate real molecule steric effects, but we don't
+				// want to have multiple conformers of rigid fragments that only differ in these
+				// unused substituents.
+				if (!isCoreFragment[atom])
 					fragment.setAtomMarker(fragmentAtom, true);
 
 				if (isCoreFragment[atom] || !isOuterShellAtom[atom]) {
@@ -192,7 +208,7 @@ public class RigidFragmentProvider {
 			}
 		}
 
-		ArrayList<Conformer> conformerList = null;
+		ArrayList<SelfOrganizedConformer> conformerList = null;
 		double[] likelihood = null;
 		Canonizer canonizer = null;
 		String key = null;
@@ -252,7 +268,7 @@ public class RigidFragmentProvider {
 						fragment.setAtomY(j, c.y);
 						fragment.setAtomZ(j, invertedEnantiomer ? -c.z : c.z);
 						}
-					conformerList.add(new Conformer(fragment));
+					conformerList.add(new SelfOrganizedConformer(fragment));
 					}
 
 				likelihood = cacheEntry.likelihood;
@@ -266,6 +282,7 @@ public class RigidFragmentProvider {
 			}
 
 			ConformationSelfOrganizer selfOrganizer = new ConformationSelfOrganizer(fragment, true);
+			selfOrganizer.setThreadMaster(mThreadMaster);
 			selfOrganizer.initializeConformers(mRandomSeed, MAX_CONFORMERS);
 
 			// Generate multiple low constraint conformers
@@ -278,19 +295,31 @@ public class RigidFragmentProvider {
 				conformer = selfOrganizer.getNextConformer();
 				}
 
+			// Calculate fraction values of the population from strain values, which somewhat resemble energies in kcal/mol
+			double ENERGY_FOR_FACTOR_10 = 1.36; // The ConformerSelfOrganizer and MMFF use kcal/mol; 1.36 kcal/mol is factor 10
+
+			double minStrain = Double.MAX_VALUE;
+			for(Conformer conf:conformerList)
+				minStrain = Math.min(minStrain, ((SelfOrganizedConformer)conf).getTotalStrain());
+
+			// Strain values resemble energies in kcal/mol, but not as reliable. Therefore we are less strict and allow factor 1000
+			double strainLimit = minStrain + 3.0 * ENERGY_FOR_FACTOR_10;
+			for (int i=conformerList.size()-1; i>=0; i--)
+				if (conformerList.get(i).getTotalStrain()>strainLimit)
+					conformerList.remove(i);
+
 			likelihood = new double[conformerList.size()];
-			double likelyhoodSum = 0.0;
-			for (int i = 0; i < conformerList.size(); i++) {
-				likelihood[i] = ((SelfOrganizedConformer) conformerList.get(i)).getLikelyhood();
-				likelyhoodSum += likelihood[i];
+			double likelihoodSum = 0;
+			int index = 0;
+			for(int i=0; i<conformerList.size(); i++) {
+				SelfOrganizedConformer conf = conformerList.get(i);
+				likelihood[i] = Math.pow(10, (minStrain - conf.getTotalStrain()) / ENERGY_FOR_FACTOR_10);
+				likelihoodSum += likelihood[i];
 				}
-			if (likelyhoodSum != 0.0)
-				for (int i=0; i < conformerList.size(); i++)
-					likelihood[i] /= likelyhoodSum;
+			for (int i=0; i<conformerList.size(); i++)
+				likelihood[i] /= likelihoodSum;
 
 			if(mOptimizeFragments) {
-				double ENERGY_FOR_FACTOR_10 = 1.36; // MMFF uses kcal/mol; 1.36 kcal/mol is factor 10
-
 				int validEnergyCount = 0;
 				double minEnergy = Double.MAX_VALUE;
 				for(Conformer conf:conformerList) {
@@ -303,7 +332,7 @@ public class RigidFragmentProvider {
 					conf.copyFrom(fragment);
 					}
 
-				double energyLimit = 2.0 * ENERGY_FOR_FACTOR_10;    // population of less than 1% of best conformer
+				double energyLimit = minEnergy + 2.0 * ENERGY_FOR_FACTOR_10;    // population of less than 1% of best conformer
 				for(Conformer conf:conformerList) {
 					if (!Double.isNaN(conf.getEnergy()) && conf.getEnergy()>energyLimit) {
 						conf.setEnergy(Double.NaN);
@@ -311,17 +340,20 @@ public class RigidFragmentProvider {
 						}
 					}
 
-					// if we have no valid energy values, we keep the likelihoods from the self organizer
+				// If we have no valid MMFF energy values, we keep the likelihoods from the self organizer, otherwise...
 				if (validEnergyCount != 0) {
 					double[] population = new double[validEnergyCount];
 					double populationSum = 0;
-					int index = 0;
+					index = 0;
 					for(int i=conformerList.size()-1; i>=0; i--) {
 						Conformer conf = conformerList.get(i);
 						if (Double.isNaN(conf.getEnergy()))
 							conformerList.remove(i);
-						else
-							populationSum += (population[index++] = Math.pow(10, (minEnergy - conf.getEnergy()) / ENERGY_FOR_FACTOR_10));
+						else {
+							population[index] = Math.pow(10, (minEnergy - conf.getEnergy()) / ENERGY_FOR_FACTOR_10);
+							populationSum += population[index];
+							index++;
+							}
 						}
 
 					likelihood = new double[validEnergyCount];
@@ -345,7 +377,7 @@ public class RigidFragmentProvider {
 			}
 
 		return new RigidFragment(coreAtomCount, coreToFragmentAtom, fragmentToOriginalAtom,
-				extendedToFragmentAtom, originalToExtendedAtom, conformerList.toArray(new Conformer[0]), likelihood);
+				extendedToFragmentAtom, originalToExtendedAtom, conformerList.toArray(new SelfOrganizedConformer[0]), likelihood);
 	}
 
 	/**

@@ -120,6 +120,58 @@ public class CombinationGenerator {
 		return li; 
 	}
 
+	/**
+	 *
+	 * @param arrSizeClass, Each value in the array stands for the number of objects.
+	 * @return
+	 */
+	public static List<List<Integer>> getCombinations(int [] arrSizeClass) {
+
+		long capacity = 1;
+
+		for (int sizeClass : arrSizeClass) {
+			capacity *= sizeClass;
+		}
+
+		if(capacity>Integer.MAX_VALUE){
+			throw new RuntimeException("Number of combinations " + capacity + " above Integer.MAX_VALUE!");
+		}
+
+		List<List<Integer>> li = new ArrayList<>((int)capacity);
+
+		List<List<Integer>> liTmp = new ArrayList<>((int)capacity);
+
+		int index=0;
+
+		for (int i = 0; i < arrSizeClass[0]; i++) {
+			List<Integer> liCombi = new ArrayList<>();
+			liCombi.add(i);
+			li.add(liCombi);
+		}
+
+		index++;
+
+		while (index<arrSizeClass.length) {
+
+			liTmp.clear();
+
+			for (List<Integer> liCombi : li) {
+				for (int i = 0; i < arrSizeClass[index]; i++) {
+					List<Integer> liCombiNew = new ArrayList<>(liCombi);
+					liCombiNew.add(i);
+					liTmp.add(liCombiNew);
+				}
+			}
+			li.clear();
+			li.addAll(liTmp);
+
+			index++;
+		}
+
+		return li;
+	}
+
+
 	public static List<int[]> getCombinations(List<int[]> li){
 
 		int nCombinations = 1;
@@ -262,7 +314,7 @@ public class CombinationGenerator {
 
 		int [] r = new int[l];
 		for (int i = 0; i < l; i++) {
-			r[i]=i;
+			r[i]=i+1;
 		}
 		List<int[]> permutations = getPermutations(r,r.length);
 

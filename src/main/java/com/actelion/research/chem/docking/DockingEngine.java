@@ -1,36 +1,10 @@
 package com.actelion.research.chem.docking;
 
 
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.Base64.Decoder;
-import java.util.Base64.Encoder;
-import java.util.Map.Entry;
-import java.util.stream.Collectors;
-
-import org.openmolecules.chem.conf.gen.ConformerGenerator;
-
 import com.actelion.research.calc.Matrix;
 import com.actelion.research.calc.ThreadMaster;
-import com.actelion.research.chem.Canonizer;
-import com.actelion.research.chem.Coordinates;
-import com.actelion.research.chem.IDCodeParser;
-import com.actelion.research.chem.IDCodeParserWithoutCoordinateInvention;
-import com.actelion.research.chem.Molecule;
-import com.actelion.research.chem.Molecule3D;
-import com.actelion.research.chem.SSSearcher;
-import com.actelion.research.chem.StereoMolecule;
+import com.actelion.research.chem.*;
 import com.actelion.research.chem.alignment3d.KabschAlignment;
-import com.actelion.research.chem.alignment3d.transformation.ExponentialMap;
-import com.actelion.research.chem.alignment3d.transformation.Quaternion;
 import com.actelion.research.chem.alignment3d.transformation.Rotation;
 import com.actelion.research.chem.alignment3d.transformation.TransformationSequence;
 import com.actelion.research.chem.alignment3d.transformation.Translation;
@@ -42,7 +16,6 @@ import com.actelion.research.chem.docking.scoring.AbstractScoringEngine;
 import com.actelion.research.chem.docking.scoring.ChemPLP;
 import com.actelion.research.chem.docking.scoring.IdoScore;
 import com.actelion.research.chem.docking.shape.ShapeDocking;
-import com.actelion.research.chem.forcefield.mmff.MMFFExternalPositionConstraint;
 import com.actelion.research.chem.forcefield.mmff.ForceFieldMMFF94;
 import com.actelion.research.chem.forcefield.mmff.MMFFPositionConstraint;
 import com.actelion.research.chem.interactionstatistics.InteractionAtomTypeCalculator;
@@ -54,7 +27,13 @@ import com.actelion.research.chem.phesa.MolecularVolume;
 import com.actelion.research.chem.phesa.PheSAAlignment;
 import com.actelion.research.chem.phesa.ShapeVolume;
 import com.actelion.research.chem.potentialenergy.PositionConstraint;
-import com.actelion.research.chem.phesa.PheSAAlignment.PheSAResult;
+import org.openmolecules.chem.conf.gen.ConformerGenerator;
+
+import java.util.*;
+import java.util.Base64.Decoder;
+import java.util.Base64.Encoder;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
 public class DockingEngine {
 /**
@@ -137,6 +116,7 @@ public class DockingEngine {
 	
 	public void setThreadMaster(ThreadMaster tm) {
 		threadMaster = tm;
+		shapeDocking.setThreadMaster(tm);
 	}
 	
 	
@@ -364,7 +344,7 @@ public class DockingEngine {
 			Translation translate = new Translation(new double[] {origCOM.x, origCOM.y, origCOM.z});
 			rot.apply(best);
 			translate.apply(best);
-			return new DockingResult(best,bestEnergy,contributions);
+			return new DockingResult(mol, best,bestEnergy,contributions);
 		}
 		else {
 			throw new DockingFailedException("docking failed");
@@ -570,6 +550,7 @@ public class DockingEngine {
 	
 	public static class DockingResult implements Comparable<DockingResult>  {
 		private double score;
+		private StereoMolecule input; //might be a different enantiomer/protomer than the pose
 		private StereoMolecule pose;
 		private Map<String,Double> contributions;
 		private static final String DELIMITER = ";";
@@ -577,12 +558,25 @@ public class DockingEngine {
 		private static final String DELIMITER3 = "%";
 		private static final String NULL_CONTRIBUTION = "#";
 		
-		public DockingResult(StereoMolecule pose, double score, Map<String,Double> contributions) {
+		public DockingResult(StereoMolecule input,
+				StereoMolecule pose, double score, Map<String,Double> contributions) {
 			this.score = score;
 			this.pose = pose;
 			this.contributions = contributions;
+			this.input = input;
 		}
 		
+		
+		
+		public void setInput(StereoMolecule input) {
+			this.input = input;
+		}
+
+		public StereoMolecule getInput() {
+			return input;
+		}
+
+
 		public double getScore() {
 			return score;
 		}
@@ -605,6 +599,8 @@ public class DockingEngine {
 			sb.append(idcode);
 			sb.append(DELIMITER);
 			sb.append(idcoords);
+			sb.append(DELIMITER);
+			sb.append(input.getIDCode());
 			sb.append(DELIMITER);
 			sb.append(encoder.encodeToString(EncodeFunctions.doubleToByteArray(score)));
 			sb.append(DELIMITER);
@@ -632,11 +628,14 @@ public class DockingEngine {
 			IDCodeParserWithoutCoordinateInvention parser = new IDCodeParserWithoutCoordinateInvention();
 			parser.parse(pose, idcode, idcoords);
 			pose.ensureHelperArrays(Molecule.cHelperCIP);
-			double score = EncodeFunctions.byteArrayToDouble(decoder.decode(s[2].getBytes()));
+			String idcodeInput = s[2];
+			StereoMolecule input = new StereoMolecule();
+			new IDCodeParser().parse(input, idcodeInput);
+			double score = EncodeFunctions.byteArrayToDouble(decoder.decode(s[3].getBytes()));
 			Map<String,Double> contributions = null;
-			if(!s[3].equals(NULL_CONTRIBUTION)) {
+			if(!s[4].equals(NULL_CONTRIBUTION)) {
 				contributions = new HashMap<String,Double>();
-				String[] splitted = s[3].split(DELIMITER2);
+				String[] splitted = s[4].split(DELIMITER2);
 				for(String contr : splitted) {
 					String[] splitted2 = contr.split(DELIMITER3);
 					String name = splitted2[0];
@@ -645,7 +644,7 @@ public class DockingEngine {
 				}
 			}
 				
-			DockingResult dockingResult = new DockingResult(pose,score,contributions);
+			DockingResult dockingResult = new DockingResult(input,pose,score,contributions);
 			return dockingResult;
 		}
 

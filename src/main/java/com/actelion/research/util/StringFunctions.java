@@ -896,10 +896,22 @@ public class StringFunctions {
 
 	
 	public static String toString(double [] arr, NumberFormat nf){
+		return toString(arr, nf, 0);
+	}
+
+	public static String toString(double [] arr, NumberFormat nf, int width){
 
 		StringBuilder sb = new  StringBuilder();
 		for (int i = 0; i < arr.length; i++) {
-			sb.append(nf.format(arr[i]));
+
+
+			String str = nf.format(arr[i]);
+
+			while (str.length()<width){
+				str = " " + str;
+			}
+
+			sb.append(str);
 			if(i < arr.length-1){
 				sb.append(ConstantsDWAR.SEP_VALUE);
 			}
@@ -1089,16 +1101,14 @@ public class StringFunctions {
 	}
 
 	public static String toString(Collection<String> li, String sep) {
-
 		StringBuilder sb = new StringBuilder();
-
+		boolean started=false;
 		for (String s : li) {
-
-			if(sb.length() > 0){
+			if(started){
 				sb.append(sep);
 			}
-
 			sb.append(s);
+			started=true;
 		}
 
 		return sb.toString();
