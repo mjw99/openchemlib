@@ -2424,6 +2424,10 @@ System.out.println("noOfRanks:"+canRank);
 		}
 
 
+	/**
+	 * @param includeExplicitHydrogen
+	 * @return canonical copy of this molecule
+	 */
 	public StereoMolecule getCanMolecule(boolean includeExplicitHydrogen) {
 		generateGraph();
 
@@ -2467,7 +2471,7 @@ System.out.println("noOfRanks:"+canRank);
 			}
 
 		mMol.copyMoleculeProperties(mol);
-		mMol.invalidateHelperArrays(Molecule.cHelperBitParities);
+		mMol.invalidateHelperArrays(Molecule.cHelperAll);
 
 		return mol;
 		}
