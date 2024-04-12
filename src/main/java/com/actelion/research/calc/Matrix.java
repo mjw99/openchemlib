@@ -127,43 +127,29 @@ public class Matrix {
      * @param arrArr
      */
     public Matrix(double [][]arrArr) {
-    	
         data = new double[arrArr.length][];
-        
         int rows = arrArr.length;
-        
         int cols = arrArr[0].length;
-        
         for (int i = 0; i < rows; i++) {
         	double [] arr = new double [cols];
-        	
         	System.arraycopy(arrArr[i], 0, arr, 0, cols);
-            
             data[i] = arr;
         }
     }
 
     public Matrix(double [][]arrArr, boolean flat) {
-
         if(!flat){
             throw new RuntimeException("Only flat constructor!");
         }
-
         data = arrArr;
-
     }
 
     public Matrix(float [][]arrArr) {
-    	
         data = new double[arrArr.length][arrArr[0].length];
-        
         int rows = arrArr.length;
-        
         int cols = arrArr[0].length;
-        
         for (int i = 0; i < rows; i++) {
         	double [] arr = new double [cols];
-        	
         	for (int j = 0; j < arr.length; j++) {
         		data[i][j] = arrArr[i][j];
 			}
@@ -2968,6 +2954,21 @@ public class Matrix {
         return var;
     }
 
+    public double getVarianceRow(int row) {
+        double var = 0;
+
+        int cols = cols();
+        double mean = getMeanRow(row);
+        double dSum = 0;
+        for (int i = 0; i < cols; i++) {
+        	dSum += (data[row][i] - mean) * (data[row][i] - mean);
+        }
+
+        var = dSum / (cols - 1.0);
+
+        return var;
+    }
+
     public double getVarianceCentered() {
         double var = 0;
 
@@ -3088,10 +3089,14 @@ public class Matrix {
 
 
     public void shuffleRows() {
-        Random rnd = new Random();
         int r = rows();
-        for(int i = r; i > 1; --i) {
-            swapRows(i, rnd.nextInt(i));
+        List<Integer> li = new ArrayList<>(r);
+        for (int i = 0; i < r; i++) {
+            li.add(i);
+        }
+        Collections.shuffle(li);
+        for (int i = 0; i < li.size(); i++) {
+            swapRows(i, li.get(i));
         }
     }
 

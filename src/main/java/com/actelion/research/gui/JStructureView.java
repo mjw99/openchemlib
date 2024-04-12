@@ -333,11 +333,15 @@ public class JStructureView extends JComponent implements ActionListener,MouseLi
 		}
 
 	public void setIDCode(String idcode) {
-		setIDCode(idcode, null);
+		int index = (idcode == null) ? -1 : idcode.indexOf(' ');
+		if (index == -1)
+			setIDCode(idcode, null);
+		else
+			setIDCode(idcode.substring(0, index), idcode.substring(index+1));
 	    }
 
 	public synchronized void setIDCode(String idcode, String coordinates) {
-		if (idcode != null && idcode.length() == 0)
+		if (idcode != null && idcode.isEmpty())
 			idcode = null;
 
 		if (mIDCode == null && idcode == null)

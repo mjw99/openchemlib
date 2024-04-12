@@ -38,10 +38,12 @@ import com.actelion.research.chem.*;
 import com.actelion.research.chem.reaction.Reaction;
 import com.actelion.research.util.ByteArrayComparator;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 public class SimilarityGraphBasedReactionMapper {
 	public static final boolean DEBUG = false;
+	public static final boolean PRINT_SCORES = false;
 
 	// When building the mapping graph, next neighbors are added based on directed environment similarity.
 	// To determine this similarity, directed radial substructures are precalculated for every atom from
@@ -66,7 +68,7 @@ public class SimilarityGraphBasedReactionMapper {
 	private float mScore;
 	private ByteArrayComparator mSimilarityComparator;
 	private byte[][][][] mReactantConnAtomEnv,mProductConnAtomEnv;   // indexes: atom,connIndex,radius,idcode bytes
-	private byte[][][][] mReactantNoPiAtomEnv,mProductNoPiAtomEnv;   // indexes: atom,connIndex,radius,idcode bytes
+//	private byte[][][][] mReactantNoPiAtomEnv,mProductNoPiAtomEnv;   // indexes: atom,connIndex,radius,idcode bytes
 	private byte[][][][] mReactantSkelAtomEnv,mProductSkelAtomEnv;   // indexes: atom,connIndex,radius,idcode bytes
 
 	/**
@@ -96,10 +98,10 @@ public class SimilarityGraphBasedReactionMapper {
 		mProductMapNo = new int[productMapNo.length];
 
 		mReactantConnAtomEnv = classifyNeighbourAtomEnvironment(mReactant, false, false);
-		mReactantNoPiAtomEnv = classifyNeighbourAtomEnvironment(mReactant, false, true);
+//		mReactantNoPiAtomEnv = classifyNeighbourAtomEnvironment(mReactant, false, true);
 		mReactantSkelAtomEnv = classifyNeighbourAtomEnvironment(mReactant, true, false);
 		mProductConnAtomEnv = classifyNeighbourAtomEnvironment(mProduct, false, false);
-		mProductNoPiAtomEnv = classifyNeighbourAtomEnvironment(mProduct, false, true);
+//		mProductNoPiAtomEnv = classifyNeighbourAtomEnvironment(mProduct, false, true);
 		mProductSkelAtomEnv = classifyNeighbourAtomEnvironment(mProduct, true, false);
 
 		initializeRingMembership();
@@ -118,7 +120,10 @@ public class SimilarityGraphBasedReactionMapper {
 
 			RootAtomPair pair = rootAtomPairSource.nextPair();
 			while (pair != null) {
+if (PRINT_SCORES)  { System.out.println(); System.out.println("@ SMapper.map() pair: "+pair.reactantAtom+","+pair.productAtom+" mMapNo:"+mMapNo+" sequence:"+mAtomPairSequenceCount); }
 				mapFromRootAtoms(pair);
+if (PRINT_SCORES)  { System.out.print("@ rMapNo:"); for (int mapNo:mReactantMapNo) System.out.print(" "+mapNo); System.out.println(); }
+if (PRINT_SCORES)  { System.out.print("@ pMapNo:"); for (int mapNo:mProductMapNo) System.out.print(" "+mapNo); System.out.println(); }
 				pair = rootAtomPairSource.nextPair();
 				}
 
@@ -134,6 +139,7 @@ public class SimilarityGraphBasedReactionMapper {
 				MappingScorer scorer = new MappingScorer(mReactant, mProduct);
 				score = scorer.scoreMapping(scorer.createReactantToProductAtomMap(mReactantMapNo, mProductMapNo));
 				}
+if (PRINT_SCORES) System.out.println("@ score:"+score);
 
 if (DEBUG) {
 	Reaction rxn = new Reaction();
@@ -435,7 +441,7 @@ if (DEBUG) {
 						if (skeletonOnly || isWithoutPi)
 							for (int bond=0; bond<fragment.getBonds(); bond++)
 								fragment.setBondType(bond, Molecule.cBondTypeSingle);
-						environment[rootAtom][connIndex][sphere] = new Canonizer(fragment, Canonizer.ENCODE_ATOM_SELECTION).getIDCode().getBytes();
+						environment[rootAtom][connIndex][sphere] = new Canonizer(fragment, Canonizer.ENCODE_ATOM_SELECTION).getIDCode().getBytes(StandardCharsets.UTF_8);
 						}
 					}
 

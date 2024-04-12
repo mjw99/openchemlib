@@ -159,6 +159,7 @@ public interface CompoundTableConstants {
     String cColumnPropertyLookupFilterRemoveMinus = "lookupFilterRemoveMinus";
     String cColumnPropertyLookupEncode = "lookupEncode";
     String cColumnPropertyLookupDetailURL = "lookupDetailURL";
+    String cColumnPropertyCategorySpecificLookup = "catSpecificLookup";
     String cColumnPropertyLaunchCount = "launchCount";
     String cColumnPropertyLaunchName = "launchName";
     String cColumnPropertyLaunchCommand = "launchCommand";
@@ -186,6 +187,7 @@ public interface CompoundTableConstants {
     String cColumnPropertyCalculated = "calculated"; //for columns that can be calculated by a task
     String cColumnPropertyChemistryDisplayMode = "chemistryDisplayMode"; // display mode for molecules, e.g. to better recognize query features
     String cColumnPropertyChemistryTextSize = "chemistryTextSize"; // display text size for molecule atom labels; default is 1.0
+    String cColumnPropertySARFirstRGroup = "firstRGroup"; // first R-group number used with core-based SAR on Scaffolds (sub-SAR)
 
     String cSuperposeValueReferenceRow = "refRow";  // "reference" or null
     String cSuperposeAlignValueShape = "shape";  // "reference" or null
