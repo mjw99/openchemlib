@@ -29,6 +29,7 @@ import com.actelion.research.chem.phesa.ShapeVolume;
 import com.actelion.research.chem.potentialenergy.PositionConstraint;
 import org.openmolecules.chem.conf.gen.ConformerGenerator;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.Base64.Decoder;
 import java.util.Base64.Encoder;
@@ -66,9 +67,10 @@ public class DockingEngine {
 	private StereoMolecule mcsRef;
 	private List<Integer> mcsConstrainedBonds;
 	private List<Integer> mcsConstrainedAtoms;
+	private double gridDimension;
 
 	
-	public DockingEngine(StereoMolecule rec, StereoMolecule nativeLig, int mcSteps, int startPositions,
+	public DockingEngine(StereoMolecule rec, StereoMolecule nativeLig, int mcSteps, int startPositions, double gridDimension,
 			ScoringFunction scoringFunction) throws DockingFailedException {
 		for(int ra=0;ra<rec.getAtoms();ra++) {
 			if(rec.getImplicitHydrogens(ra)>0)
@@ -89,9 +91,9 @@ public class DockingEngine {
 		ShapeVolume bsVolume = NegativeReceptorImageCreator.create(nativeLigand, receptor, transform);
 		shapeDocking = new ShapeDocking(bsVolume,transform);
 		
-		MoleculeGrid grid = new MoleculeGrid(nativeLigand,DockingEngine.GRID_RESOLUTION,
-				new Coordinates(DockingEngine.GRID_DIMENSION,DockingEngine.GRID_DIMENSION,
-						DockingEngine.GRID_DIMENSION));
+		MoleculeGrid grid = new MoleculeGrid(nativeLigand,GRID_RESOLUTION,
+				new Coordinates(gridDimension,gridDimension,
+						gridDimension));
 		
 		Set<Integer> bindingSiteAtoms = new HashSet<Integer>();
 		
@@ -110,8 +112,12 @@ public class DockingEngine {
 
 	}
 	
+	public DockingEngine(StereoMolecule receptor, StereoMolecule nativeLigand, double gridDimension) throws DockingFailedException {
+		this(receptor,nativeLigand,DEFAULT_NR_MC_STEPS,DEFAULT_START_POSITIONS, gridDimension,ScoringFunction.CHEMPLP);
+	}
+	
 	public DockingEngine(StereoMolecule receptor, StereoMolecule nativeLigand) throws DockingFailedException {
-		this(receptor,nativeLigand,DEFAULT_NR_MC_STEPS,DEFAULT_START_POSITIONS,ScoringFunction.CHEMPLP);
+		this(receptor,nativeLigand,DEFAULT_NR_MC_STEPS,DEFAULT_START_POSITIONS, GRID_DIMENSION,ScoringFunction.CHEMPLP);
 	}
 	
 	public void setThreadMaster(ThreadMaster tm) {
@@ -119,6 +125,7 @@ public class DockingEngine {
 		shapeDocking.setThreadMaster(tm);
 	}
 	
+
 	
 	/**
 	 * generate initial poses: 
@@ -631,7 +638,7 @@ public class DockingEngine {
 			String idcodeInput = s[2];
 			StereoMolecule input = new StereoMolecule();
 			new IDCodeParser().parse(input, idcodeInput);
-			double score = EncodeFunctions.byteArrayToDouble(decoder.decode(s[3].getBytes()));
+			double score = EncodeFunctions.byteArrayToDouble(decoder.decode(s[3].getBytes(StandardCharsets.UTF_8)));
 			Map<String,Double> contributions = null;
 			if(!s[4].equals(NULL_CONTRIBUTION)) {
 				contributions = new HashMap<String,Double>();
@@ -639,7 +646,7 @@ public class DockingEngine {
 				for(String contr : splitted) {
 					String[] splitted2 = contr.split(DELIMITER3);
 					String name = splitted2[0];
-					double value = EncodeFunctions.byteArrayToDouble(decoder.decode(splitted2[1].getBytes()));
+					double value = EncodeFunctions.byteArrayToDouble(decoder.decode(splitted2[1].getBytes(StandardCharsets.UTF_8)));
 					contributions.put(name, value);
 				}
 			}

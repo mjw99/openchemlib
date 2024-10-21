@@ -36,10 +36,7 @@ package com.actelion.research.chem;
 
 import com.actelion.research.util.Angle;
 
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.util.Arrays;
 
 /**
@@ -200,8 +197,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * @return atom map from this to destMol with not copied atom's index being -1
 	 */
 	public int[] copyMoleculeByBonds(ExtendedMolecule destMol, boolean[] includeBond, boolean recognizeDelocalizedBonds, int[] atomMap) {
-		if (recognizeDelocalizedBonds)
-			ensureHelperArrays(cHelperRings);
+		ensureHelperArrays(recognizeDelocalizedBonds ? cHelperRings : cHelperNeighbours);
 
 		destMol.mAtomList = null;
 		if (mIsFragment)
@@ -213,7 +209,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		destMol.mAllAtoms = 0;
 		for (int atom=0; atom<mAllAtoms;atom++) {
 			atomMap[atom] = -1;
-			for (int i=0; i< mConnAtoms[atom]; i++) {
+			for (int i=0; i<mConnAtoms[atom]; i++) {
 				if (includeBond[mConnBond[atom][i]]) {
 					atomMap[atom] = copyAtom(destMol, atom, 0, 0);
 
@@ -295,35 +291,30 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 				int lostStereoBond = -1;
 				int lostAtom = -1;
 				for (int i=0; i<mAllConnAtoms[atom]; i++) {
-//if (mConnAtom.length>=atom || atomMap.length>=mConnAtom[atom][i])
-// System.out.println("mConnAtom.length:"+mConnAtom.length+" atom:"+atom+" atomMap.length:"+atomMap.length+" i:"+i+" mConnAtom[atom][i]:"+mConnAtom[atom][i]+" mAtoms:"+mAtoms+" mAllAtoms:"+mAllAtoms);
-					if (atomMap.length>mConnAtom[atom][i]
-					 && atomMap[mConnAtom[atom][i]] != -1)
+					if (bondMap[mConnBond[atom][i]] != -1)
 						remainingNeighbours++;
 					else if (mConnBondOrder[atom][i] == 1
-							&& isStereoBond(mConnBond[atom][i])
-							&& mBondAtom[0][mConnBond[atom][i]] == atom) {
+						 && isStereoBond(mConnBond[atom][i])
+						 && mBondAtom[0][mConnBond[atom][i]] == atom) {
 						lostStereoBond = mConnBond[atom][i];
 						lostAtom = mConnAtom[atom][i];
+						}
 					}
-				}
-				if (lostStereoBond != -1
-						&& remainingNeighbours >= 3) {
+				if (lostStereoBond != -1 && remainingNeighbours >= 3) {
 					double angle = getBondAngle(atom, lostAtom);
 					double minAngleDif = 10.0;
 					int minConnBond = -1;
 					for (int i=0; i<mAllConnAtoms[atom]; i++) {
 						if (mConnBondOrder[atom][i] == 1
-								&& (!isStereoBond(mConnBond[atom][i]) || mBondAtom[0][mConnBond[atom][i]] == atom)
-								&& atomMap.length>mConnAtom[atom][i]
-								&& atomMap[mConnAtom[atom][i]] != -1) {
+						 && (!isStereoBond(mConnBond[atom][i]) || mBondAtom[0][mConnBond[atom][i]] == atom)
+						 && bondMap[mConnBond[atom][i]] != -1) {
 							double angleDif = Math.abs(getAngleDif(angle, getBondAngle(atom, mConnAtom[atom][i])));
 							if (minAngleDif > angleDif) {
 								minAngleDif = angleDif;
 								minConnBond = mConnBond[atom][i];
+								}
 							}
 						}
-					}
 					if (minConnBond != -1) {
 						int destBond = bondMap[minConnBond];
 						destMol.setBondType(destBond, mBondType[minConnBond] == cBondTypeUp ? cBondTypeDown : cBondTypeUp);
@@ -630,7 +621,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	public int getExcludedNeighbourCount(int atom) {
 		int count = 0;
 		for (int i=0; i<mConnAtoms[atom]; i++)
-			if ((mAtomQueryFeatures[i] & Molecule.cAtomQFExcludeGroup) != 0)
+			if ((mAtomQueryFeatures[mConnAtom[atom][i]] & Molecule.cAtomQFExcludeGroup) != 0)
 				count++;
 		return count;
 		}
@@ -1072,29 +1063,8 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * @return atoms being in the same fragment as rootAtom
 	 */
 	public int[] getFragmentAtoms(int rootAtom, boolean considerMetalBonds) {
-		ensureHelperArrays(cHelperNeighbours);
-
-		boolean[] isFragmentMember = new boolean[mAllAtoms];
-		int graphAtom[] = new int[mAllAtoms];
-
-		graphAtom[0] = rootAtom;
-		isFragmentMember[rootAtom] = true;
-		int current = 0;
-		int highest = 0;
-		int fragmentMembers = 1;
-	 	while (current <= highest) {
-			int connAtoms = considerMetalBonds ? getAllConnAtomsPlusMetalBonds(graphAtom[current])
-											   : mAllConnAtoms[graphAtom[current]];
-			for (int i=0; i<connAtoms; i++) {
-				int candidate = mConnAtom[graphAtom[current]][i];
-				if (!isFragmentMember[candidate]) {
-					graphAtom[++highest] = candidate;
-					isFragmentMember[candidate] = true;
-					fragmentMembers++;
-					}
-				}
-			current++;
-			}
+		boolean[] isFragmentMember = isFragmentMember = new boolean[mAllAtoms];
+		int fragmentMembers = getFragmentAtoms(rootAtom, considerMetalBonds, isFragmentMember);
 
 		int[] fragmentMember = new int[fragmentMembers];
 		fragmentMembers = 0;
@@ -1103,6 +1073,47 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 				fragmentMember[fragmentMembers++] = atom;
 
 		return fragmentMember;
+		}
+
+
+	/**
+	 * Determines all atoms for which a path of bonds exists to rootAtom.
+	 * Metal ligand bonds may or may not be considered a connection.
+	 * If isFragmentMember is not null, then it receives the fragment membership flags.
+	 * @param rootAtom
+	 * @param considerMetalBonds
+	 * @param isFragmentMember null or array with size of at least all non-H atoms
+	 * @return number of atoms of fragment that rootAtom belongs to
+	 */
+	public int getFragmentAtoms(int rootAtom, boolean considerMetalBonds, boolean[] isFragmentMember) {
+		ensureHelperArrays(cHelperNeighbours);
+
+		if (isFragmentMember == null)
+			isFragmentMember = new boolean[mAllAtoms];
+
+		int graphAtom[] = new int[mAllAtoms];
+
+		graphAtom[0] = rootAtom;
+		isFragmentMember[rootAtom] = true;
+		int current = 0;
+		int highest = 0;
+		int fragmentMembers = 1;
+		while (current <= highest) {
+			int connAtoms = considerMetalBonds ? getAllConnAtomsPlusMetalBonds(graphAtom[current])
+					: mAllConnAtoms[graphAtom[current]];
+			for (int i=0; i<connAtoms; i++) {
+				int candidate = mConnAtom[graphAtom[current]][i];
+				if (candidate < isFragmentMember.length
+				 && !isFragmentMember[candidate]) {
+					graphAtom[++highest] = candidate;
+					isFragmentMember[candidate] = true;
+					fragmentMembers++;
+					}
+				}
+			current++;
+			}
+
+		return fragmentMembers;
 		}
 
 
@@ -1691,6 +1702,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 			return 0;
 
 		return 16 - mAllConnAtoms[atom]
+				  + 16 * Math.max(0, (Math.min(9, getBondRingSize(bond)) - 2))
 				  + (((mBondType[bond] & cBondTypeMaskStereo) == 0 || mBondAtom[0][bond] != atom) ? 32768 : 0)
 				  + ((getAtomParity(atom) == 0) ? 4096 : 0)
 				  + ((mAtomicNo[atom] == 1) ? 2048 : 0)
@@ -2457,6 +2469,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 				}
 			}
 
+		/* Disabled for now, because no obvious reason and counter example: gGx@@eJxfuURtJ@ !Bsttq@HlDgrZ}b@ ;TLS 2-Sep-2023
 		// For every neighbour determine the closest left and the closest right neighbour.
 		// If the angle between those two is smaller than 180 degrees, then give a strong preference
 		// to the one in the middle to be used as stereo bond.
@@ -2478,7 +2491,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 					}
 				isPreferred[i] = (closestRightDif - closestLeftDif < Math.PI);
 				}
-			}
+			}*/
 
 		int preferredBond = -1;
 
@@ -2487,8 +2500,8 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 			int connAtom = mConnAtom[atom][i];
 			int connBond = mConnBond[atom][i];
 			int score = getStereoBondScore(connBond, connAtom);
-			if (isPreferred[i])
-				score += 16384; // first priority
+//			if (isPreferred[i])
+//				score += 16384; // first priority
 			if (bestScore < score
 			 && (!excludeStereoBonds || !isStereoBond(connBond))) {
 				bestScore = score;
@@ -2760,6 +2773,10 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * - We find the bridge size (atom count) to where it touches the smallest ring.<br>
 	 * - We also find the path length from the touch point on the smallest ring back to atom.<br>
 	 * - Using heuristics we decide with this information, whether the ring system prevents a flat geometry of atom.
+	 * e.g.: Catalytic Asymmetric Synthesis of Tröger’s Base Analogues with Nitrogen Stereocenter
+	 *       Chun Ma, Yue Sun, Junfeng Yang, Hao Guo, and Junliang Zhang
+	 *       ACS Central Science 2023 9 (1), 64-71
+	 *       DOI: 10.1021/acscentsci.2c01121
 	 * @param atom
 	 * @return true, if the attached ring system prevents a flat geometry of atom
 	 */
@@ -2840,12 +2857,11 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 				&& getAtomicNo(bridgeHead) == 7
 				&& getAtomCharge(bridgeHead) != 1;
 
-		if (bondCountToBridgeHead == 1
-		 && !bridgeHeadIsFlat
-		 && !bridgeHeadMayInvert
-		 && smallestRingSize <= 4
-		 && bridgeAtomCount <= 3)
-			return true;
+		if (bondCountToBridgeHead == 1)
+			return !bridgeHeadIsFlat
+				&& !bridgeHeadMayInvert
+				&& smallestRingSize <= 4
+				&& bridgeAtomCount <= 3;
 
 		switch (smallestRingSize) {
 			// case 3 is fully handled
@@ -4046,7 +4062,14 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 				mAtomQueryFeatures[atom] &= ~cAtomQFNotChain;   // redundant
 
 			if (mAtomCharge[atom] != 0)	// explicit charge supersedes query features
-				mAtomFlags[atom] &= ~cAtomQFCharge;
+				mAtomQueryFeatures[atom] &= ~cAtomQFCharge;
+
+			if (getOccupiedValence(atom) == getMaxValence(atom)) {
+				mAtomQueryFeatures[atom] &= ~cAtomQFNeighbours;
+				mAtomQueryFeatures[atom] &= ~cAtomQFENeighbours;
+				mAtomQueryFeatures[atom] &= ~cAtomQFHydrogen;
+				mAtomQueryFeatures[atom] &= ~cAtomQFPiElectrons;
+				}
 			}
 		}
 
@@ -4083,37 +4106,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 			}
 		}
 
-
 	private void writeObject(ObjectOutputStream stream) throws IOException {}
+
 	private void readObject(ObjectInputStream stream) throws IOException {}
-
-
-	public final static Coordinates getCenterGravity(ExtendedMolecule mol) {
-
-		int n = mol.getAllAtoms();
-
-		int [] indices = new int [n];
-
-		for (int i = 0; i < indices.length; i++) {
-			indices[i]=i;
-		}
-
-		return getCenterGravity(mol, indices);
-	}
-
-	public final static Coordinates getCenterGravity(ExtendedMolecule mol, int[] indices) {
-
-		Coordinates c = new Coordinates();
-		for (int i = 0; i < indices.length; i++) {
-			c.x += mol.getAtomX(indices[i]);
-			c.y += mol.getAtomY(indices[i]);
-			c.z += mol.getAtomZ(indices[i]);
-		}
-		c.x /= indices.length;
-		c.y /= indices.length;
-		c.z /= indices.length;
-
-		return c;
-	}
-
 }

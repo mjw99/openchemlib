@@ -43,7 +43,7 @@ public class CoordinateInventor {
 	public static final int MODE_REMOVE_HYDROGEN = 2;
 	public static final int MODE_KEEP_MARKED_ATOM_COORDS = 4;
 	public static final int MODE_PREFER_MARKED_ATOM_COORDS = 8;
-	protected static final int MODE_CONSIDER_MARKED_ATOMS = MODE_KEEP_MARKED_ATOM_COORDS | MODE_PREFER_MARKED_ATOM_COORDS;
+	private static final int MODE_CONSIDER_MARKED_ATOMS = MODE_KEEP_MARKED_ATOM_COORDS | MODE_PREFER_MARKED_ATOM_COORDS;
 	public static final int MODE_DEFAULT = MODE_REMOVE_HYDROGEN;
 
 	private static final byte FLIP_AS_LAST_RESORT = 1;
@@ -1833,7 +1833,7 @@ f.mAtomY[i] = mMol.getAtomY(f.mAtom[i]) / avbl;
 		int current = 0;
 		int highest = 0;
 		while (current <= highest) {
-			for (int i=0; i<mMol.getAllConnAtomsPlusMetalBonds(graphAtom[current]); i++) {
+			for (int i=0; i<mMol.getAllConnAtoms(graphAtom[current]); i++) {
 				int candidate = mMol.getConnAtom(graphAtom[current], i);
 				int theBond = mMol.getConnBond(graphAtom[current], i);
 
