@@ -1179,23 +1179,43 @@ public class Molecule implements Serializable {
 	 * @return atom mapping from original mol to this molecule after incorporation of mol
 	 */
 	public int[] addMolecule(Molecule mol, int atoms, int bonds) {
+		return addMolecule(mol, 0, atoms, 0, bonds);
+		}
+
+
+	/**
+	 * Copies first atoms and first bonds of mol to the end of this Molecule's atom and bond
+	 * tables. If mol is a fragment then this Molecule's fragment flag is set to true
+	 * and all query features of mol are also copied. Typically, this is used to add a
+	 * molecule without explicit hydrogen atoms. If parities of copied molecules are valid,
+	 * then you may call setParitiesValid() on this molecule after adding molecules.
+	 * High level function for constructing a molecule. Does not require any helper arrays.
+	 * @param mol
+	 * @param atom1 first atom to be copied
+	 * @param atom2 1+last atom to be copied
+	 * @param bond1 first bond to be copied
+	 * @param bond2 one+last bond to be copied
+	 * @return atom mapping from original mol to this molecule after incorporation of mol
+	 */
+	public int[] addMolecule(Molecule mol, int atom1, int atom2, int bond1, int bond2) {
 		mIsFragment |= mol.mIsFragment;
 
 		int[] atomMap = new int[mol.mAllAtoms];
 		int esrGroupCountAND = renumberESRGroups(cESRTypeAnd);
 		int esrGroupCountOR = renumberESRGroups(cESRTypeOr);
-		for (int atom=0; atom<atoms; atom++) {
+		for (int atom=atom1; atom<atom2; atom++) {
 			atomMap[atom] = mol.copyAtom(this, atom, esrGroupCountAND, esrGroupCountOR);
-			}
-		for (int bond=0; bond<bonds; bond++) {
+		}
+		for (int bond=bond1; bond<bond2; bond++) {
 			mol.copyBond(this, bond, esrGroupCountAND, esrGroupCountOR, atomMap, false);
-			}
+		}
 
 		mIsRacemate = (mIsRacemate && mol.mIsRacemate);
 		mChirality = cChiralityUnknown;
 		mValidHelperArrays = cHelperNone;
 		return atomMap;
-		}
+	}
+
 
 	/**
 	 * Adds and connects the substituent molecule to the rootAtom of this molecule.
@@ -1655,24 +1675,11 @@ public class Molecule implements Serializable {
 	 * @param atom
 	 */
 	public void deleteAtom(int atom) {
-		for (int bnd=0; bnd<mAllBonds; bnd++) {
-			for (int i=0; i<2; i++) {
-				if (mBondAtom[i][bnd] == atom) {
+		for (int bnd=0; bnd<mAllBonds; bnd++)
+			for (int i=0; i<2; i++)
+				if (mBondAtom[i][bnd] == atom)
 					mBondType[bnd] = cBondTypeDeleted;	// mark for delete
-					int bonds = 0;
-					for (int j=0; j<mAllBonds; j++) {
-						if (j == bnd) continue;
-						if ((mBondAtom[0][j] == mBondAtom[1-i][bnd])
-						 || (mBondAtom[1][j] == mBondAtom[1-i][bnd]))
-							bonds++;
-						}
-					if (bonds == 0) {
-						removeMappingNo(mAtomMapNo[mBondAtom[1-i][bnd]]);
-						mAtomicNo[mBondAtom[1-i][bnd]] = -1;
-						}			// mark for delete
-					}
-				}
-			}
+
 		removeMappingNo(mAtomMapNo[atom]);
 		mAtomicNo[atom] = -1;		// mark for delete
 		if (mAtomList != null)
@@ -2445,8 +2452,8 @@ public class Molecule implements Serializable {
 	 * If there are no bonds, then the smallest distance between unconnected atoms is
 	 * determined and a reasonable potential bond length derived from that is returned.
 	 * If we have less than 2 atoms, defaultBondLength is returned.
-	 * @param atoms atom indexes >= this are not considered
-	 * @param bonds bond indexes >= this are not considered
+	 * @param atoms atom indexes >= these are not considered
+	 * @param bonds bond indexes >= these are not considered
 	 * @param defaultBondLength
 	 * @param coords to be used, either the molecule's coordinates, or an alternative, e.g. from a Conformer
 	 * @return
@@ -3468,8 +3475,9 @@ public class Molecule implements Serializable {
 			mBondQueryFeatures[bond] |= feature;
 		else
 			mBondQueryFeatures[bond] &= ~feature;
-		mValidHelperArrays = cHelperNone;	// there is an influence on occipied valence, bond order, etc.
-		mIsFragment = true;
+		mValidHelperArrays = cHelperNone;	// there is an influence on occupied valence, bond order, etc.
+		if (value && feature != 0)
+			mIsFragment = true;
 		}
 
 

@@ -538,21 +538,37 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 	/**
 	 * The neighbours (connected atoms) of any atom are sorted by their relevance:<br>
-	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non natural abundance isotops, custom labelled hydrogen, etc.)<br>
+	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non-natural abundance isotops, custom labelled hydrogen, etc.)<br>
 	 * 2. plain-hydrogen atoms (natural abundance, bond order 1)<br>
 	 * 3. loosely connected atoms (bond order 0, i.e. metall ligand bond)<br>
 	 * Only valid after calling ensureHelperArrays(cHelperNeighbours or higher);
+	 * Note: This method includes neighbours marked as being part of an exclude group!
 	 * @param atom
 	 * @return count of category 1 neighbour atoms (excludes plain H and bond zero orders)
 	 */
-	public int getConnAtoms(int atom) {
-		return mConnAtoms[atom];
+	public int getNotExcludedConnAtoms(int atom) {
+		return mConnAtoms[atom] - getExcludedNeighbourCount(atom);
 		}
 
 
 	/**
 	 * The neighbours (connected atoms) of any atom are sorted by their relevance:<br>
-	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non natural abundance isotops, custom labelled hydrogen, etc.)<br>
+	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non-natural abundance isotops, custom labelled hydrogen, etc.)<br>
+	 * 2. plain-hydrogen atoms (natural abundance, bond order 1)<br>
+	 * 3. loosely connected atoms (bond order 0, i.e. metall ligand bond)<br>
+	 * Only valid after calling ensureHelperArrays(cHelperNeighbours or higher);
+	 * Note: This method includes neighbours marked as being part of an exclude group!
+	 * @param atom
+	 * @return count of category 1 neighbour atoms (excludes plain H and bond zero orders)
+	 */
+	public int getConnAtoms(int atom) {
+		return mConnAtoms[atom];
+	}
+
+
+	/**
+	 * The neighbours (connected atoms) of any atom are sorted by their relevance:<br>
+	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non-natural abundance isotops, custom labelled hydrogen, etc.)<br>
 	 * 2. plain-hydrogen atoms (natural abundance, bond order 1)<br>
 	 * 3. loosely connected atoms (bond order 0, i.e. metall ligand bond)<br>
 	 * Only valid after calling ensureHelperArrays(cHelperNeighbours or higher);
@@ -566,7 +582,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 	/**
 	 * The neighbours (connected atoms) of any atom are sorted by their relevance:<br>
-	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non natural abundance isotops, custom labelled hydrogen, etc.)<br>
+	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non-natural abundance isotops, custom labelled hydrogen, etc.)<br>
 	 * 2. plain-hydrogen atoms (natural abundance, bond order 1)<br>
 	 * 3. loosely connected atoms (bond order 0, i.e. metall ligand bond)<br>
 	 * Only valid after calling ensureHelperArrays(cHelperNeighbours or higher);
@@ -581,7 +597,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 	/**
 	 * The neighbours (connected atoms) of any atom are sorted by their relevance:<br>
-	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non natural abundance isotops, custom labelled hydrogen, etc.)<br>
+	 * 1. non-hydrogen atoms (bond order 1 and above) and unusual hydrogen atoms (non-natural abundance isotops, custom labelled hydrogen, etc.)<br>
 	 * 2. plain-hydrogen atoms (natural abundance, bond order 1)<br>
 	 * 3. loosely connected atoms (bond order 0, i.e. metall ligand bond)<br>
 	 * Only valid after calling ensureHelperArrays(cHelperNeighbours or higher);
@@ -616,13 +632,14 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	/**
 	 * This method returns the count of atom neighbours which are marked as being an exclude group.
 	 * @param atom
-	 * @return the number of non-hydrogen neighbor atoms
+	 * @return the number of non-hydrogen neighbor atoms marked as being part of an exclude group
 	 */
 	public int getExcludedNeighbourCount(int atom) {
 		int count = 0;
-		for (int i=0; i<mConnAtoms[atom]; i++)
-			if ((mAtomQueryFeatures[mConnAtom[atom][i]] & Molecule.cAtomQFExcludeGroup) != 0)
-				count++;
+		if (mIsFragment)
+			for (int i=0; i<mConnAtoms[atom]; i++)
+				if ((mAtomQueryFeatures[mConnAtom[atom][i]] & Molecule.cAtomQFExcludeGroup) != 0)
+					count++;
 		return count;
 		}
 
@@ -1420,7 +1437,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	public boolean supportsImplicitHydrogen(int atom) {
 		if ((mAtomFlags[atom] & cAtomFlagsValence) != 0)
 			return true;
-		if (mAtomicNo[atom] == 1)
+		if (mAtomicNo[atom] <= 1)
 			return false;
 		return isOrganicAtom(atom)
 				|| mAtomicNo[atom] == 13	// Al
@@ -1428,7 +1445,28 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		}
 
 	/**
-	 * Calculates and return the number of implicit hydrogens at atom.
+	 * Calculates and returns the number of implicit hydrogens of the molecule.
+	 * For hydrogens atoms, metals except Al, or a noble gases, 0 is assumed.
+	 * For all other atom kinds the number of implicit hydrogens is basically
+	 * the lowest typical valence that is compatible with the occupied valence,
+	 * minus the occupied valence corrected by atom charge and radical state.
+	 * If this molecule is a fragment, then 0 is returned.
+	 * @return number of implicit hydrogens of the molecule
+	 */
+	public int getImplicitHydrogens() {
+		if (mIsFragment)
+			return 0;
+
+		ensureHelperArrays(cHelperNeighbours);
+		int implicitHydrogens = 0;
+		for (int atom=0; atom<mAtoms; atom++)
+			implicitHydrogens += getImplicitHydrogens(atom);
+
+		return implicitHydrogens;
+		}
+
+	/**
+	 * Calculates and returns the number of implicit hydrogens at atom.
 	 * If atom is itself a hydrogen atom, a metal except Al, or a noble gas,
 	 * then 0 is returned. For all other atom kinds the number of
 	 * implicit hydrogens is basically the lowest typical valence that is compatible
@@ -1445,6 +1483,10 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		// H, metals except Al, noble gases don't have implicit hydrogens
 		if (!supportsImplicitHydrogen(atom))
 			return 0;
+
+		// attachment points have at least a valence of 1, i.e. they must be connected to something
+		if (mAtomicNo[atom] == 0 || "*".equals(getAtomCustomLabel(atom)))
+			return mAllConnAtoms[atom] == 0 ? 1 : 0;
 
 		ensureHelperArrays(cHelperNeighbours);
 
@@ -1736,17 +1778,17 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * @return whether the atom is a member of a delocalized ring (subset of aromatic rings)
 	 */
 	public boolean isDelocalizedAtom(int atom) {
-		return (atom < mAtoms) ? mRingSet.isDelocalizedAtom(atom) : false;
+		return atom<mAtoms && mRingSet.isDelocalizedAtom(atom);
 	}
 
 
 	public boolean isAromaticBond(int bond) {
-		return (bond < mBonds) ? mRingSet.isAromaticBond(bond) : false;
+		return bond<mBonds && mRingSet.isAromaticBond(bond);
 	}
 
 
 	public boolean isHeteroAromaticBond(int bond) {
-		return (bond < mBonds) ? mRingSet.isHeteroAromaticBond(bond) : false;
+		return bond<mBonds && mRingSet.isHeteroAromaticBond(bond);
 	}
 
 
@@ -3459,8 +3501,11 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * bonds leading to them are moved to the end of the bond table. This way algorithms can skip
 	 * hydrogen atoms easily. For every atom directly connected atoms and bonds (with and without
 	 * hydrogens) are determined. The number of pi electrons is counted.<br>
+	 * If this Molecule is a substructure (mFragment=true) and has no 3-dimensional atom coordinates,
+	 * then all explicit hydrogen atoms are converted into query features, unless setHydrogenProtection(true)
+	 * was called before on this Molecule.<br>
 	 * <i>cHelperRings</i>: Aromatic and non-aromatic rings are detected. Atom and bond ring
-	 * properties are set and a ring collection provides a total set of small rings (7 or less atoms).
+	 * properties are set and a ring collection provides a total set of small rings (7 or fewer atoms).
 	 * Atoms being in allylic/benzylic or stabilized (neighbor of a carbonyl or similar group) position
 	 * are flagged as such.<br>
 	 * <i>cHelperParities</i>: Atom (tetrahedral or axial) and bond (E/Z or atrop) parities are calculated
@@ -3482,12 +3527,12 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		if ((mValidHelperArrays & cHelperBitNeighbours) == 0) {
 			handleHydrogens();
 			calculateNeighbours();
-
 			mValidHelperArrays |= cHelperBitNeighbours;
 
-			if (convertHydrogenToQueryFeatures()) {
+			if (mIsFragment && !is3D() && convertHydrogenToQueryFeatures()) {
 				handleHydrogens();
 				calculateNeighbours();
+				mValidHelperArrays |= cHelperBitNeighbours;
 				}
 			}
 
@@ -3972,9 +4017,6 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * @return true if hydrogens were deleted and, thus, mConnAtoms are invalid
 	 */
 	private boolean convertHydrogenToQueryFeatures() {
-		if (!mIsFragment)
-			return false;
-
 		// if an atom has no free valence then cAtomQFNoMoreNeighbours is not necessary
 		// and cAtomQFMoreNeighbours is not possible
 		// unless it is an uncharged N- or O-family atom that could be e.g. methylated
@@ -3984,12 +4026,15 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 				mAtomQueryFeatures[atom] &= ~(cAtomQFNoMoreNeighbours | cAtomQFMoreNeighbours);
 			}
 
-			// approximate explicit hydrogens by query features
-			// and remove explicit hydrogens except those with stereo bonds
+		if (mProtectHydrogen)
+			return false;
+
+		// approximate explicit hydrogens by query features
+		// and remove explicit hydrogens except those with stereo bonds
 		boolean deleteHydrogens = false;
 		for (int atom=0; atom<mAtoms; atom++) {
 			int explicitHydrogens = getExplicitHydrogens(atom);
-			if (!mProtectHydrogen && explicitHydrogens > 0) {
+			if (explicitHydrogens > 0) {
 				if ((mAtomQueryFeatures[atom] & cAtomQFNoMoreNeighbours) == 0) {
 						// add query feature hydrogen to explicit hydrogens
 					int queryFeatureHydrogens =
@@ -4031,6 +4076,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 					}
 				}
 			}
+
 		if (deleteHydrogens)
 			compressMolTable();
 
@@ -4050,16 +4096,25 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		ensureHelperArrays(cHelperRings);
 
 		for (int atom=0; atom<mAtoms; atom++) {
-			if (isRingAtom(atom))
-				mAtomQueryFeatures[atom] &= ~(cAtomQFRingSize0 | cAtomQFNotChain);  // forbidden
+			if (isRingAtom(atom)) {
+				// don't remove cAtomQFNotChain, if it is part of more complex ringstate
+				if ((mAtomQueryFeatures[atom] & cAtomQFRingState) == cAtomQFNotChain)
+					mAtomQueryFeatures[atom] &= ~cAtomQFNotChain;  // redundant
+				mAtomQueryFeatures[atom] &= ~cAtomQFRingSize0;  // forbidden
+				}
 
 			if (isAromaticAtom(atom))
 				mAtomQueryFeatures[atom] &= ~cAtomQFAromState;   // redundant or impossible
 			else if ((mAtomQueryFeatures[atom] & cAtomQFAromatic) != 0)
 				mAtomQueryFeatures[atom] &= ~cAtomQFNotAromatic;
 
-			if ((mAtomQueryFeatures[atom] & cAtomQFSmallRingSize) != 0)
-				mAtomQueryFeatures[atom] &= ~cAtomQFNotChain;   // redundant
+			if ((mAtomQueryFeatures[atom] & cAtomQFSmallRingSize) != 0  // of (legacy) smallest ring size is defined
+			 || ((mAtomQueryFeatures[atom] & cAtomQFNewRingSize) != 0)  // allowed list of ring sizes is provided and doesn't contain 'no-ring'
+			  && ((mAtomQueryFeatures[atom] & cAtomQFRingSize0) == 0)) {
+				// don't remove cAtomQFNotChain, if it is part of more complex ringstate
+				if ((mAtomQueryFeatures[atom] & cAtomQFRingState) == cAtomQFNotChain)
+					mAtomQueryFeatures[atom] &= ~cAtomQFNotChain;  // redundant
+				}
 
 			if (mAtomCharge[atom] != 0)	// explicit charge supersedes query features
 				mAtomQueryFeatures[atom] &= ~cAtomQFCharge;
@@ -4085,24 +4140,32 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		ensureHelperArrays(cHelperRings);
 
 		for (int bond=0; bond<mBonds; bond++) {
-			if (isDelocalizedBond(bond))
-				mBondQueryFeatures[bond] &= ~cBondQFDelocalized;
+			int bondTypeQFCount = Integer.bitCount(mBondQueryFeatures[bond] & (Molecule.cBondQFBondTypes | Molecule.cBondQFRareBondTypes));
 
-			int bondType = mBondType[bond] & cBondTypeMaskSimple;
-			if (bondType == cBondTypeSingle)
-				mBondQueryFeatures[bond] &= ~cBondQFSingle;
-			else if (bondType == cBondTypeDouble)
-				mBondQueryFeatures[bond] &= ~cBondQFDouble;
-			else if (bondType == cBondTypeTriple)
-				mBondQueryFeatures[bond] &= ~cBondQFTriple;
-			else if (bondType == cBondTypeQuadruple)
-				mBondQueryFeatures[bond] &= ~cBondQFQuadruple;
-			else if (bondType == cBondTypeQuintuple)
-				mBondQueryFeatures[bond] &= ~cBondQFQuintuple;
-			else if (bondType == cBondTypeMetalLigand)
-				mBondQueryFeatures[bond] &= ~cBondQFMetalLigand;
-			else if (bondType == cBondTypeDelocalized)
+			if (isDelocalizedBond(bond) & (mBondQueryFeatures[bond] & cBondQFDelocalized) != 0) {
 				mBondQueryFeatures[bond] &= ~cBondQFDelocalized;
+				bondTypeQFCount--;
+				}
+
+			// if we have allowed bond types defined, then make sure,
+			// that the explicit bond type is one of them.
+			if (bondTypeQFCount != 0) {
+				int bondType = mBondType[bond] & cBondTypeMaskSimple;
+				if (bondType == cBondTypeSingle)
+					mBondQueryFeatures[bond] |= cBondQFSingle;
+				else if (bondType == cBondTypeDouble)
+					mBondQueryFeatures[bond] |= cBondQFDouble;
+				else if (bondType == cBondTypeTriple)
+					mBondQueryFeatures[bond] |= cBondQFTriple;
+				else if (bondType == cBondTypeQuadruple)
+					mBondQueryFeatures[bond] |= cBondQFQuadruple;
+				else if (bondType == cBondTypeQuintuple)
+					mBondQueryFeatures[bond] |= cBondQFQuintuple;
+				else if (bondType == cBondTypeMetalLigand)
+					mBondQueryFeatures[bond] |= cBondQFMetalLigand;
+				else if (bondType == cBondTypeDelocalized)
+					mBondQueryFeatures[bond] |= cBondQFDelocalized;
+				}
 			}
 		}
 

@@ -98,8 +98,11 @@ public class DescriptorHandlerFlexophore implements IDescriptorHandlerFlexophore
 
 	protected static final int MIN_NUM_ATOMS = 6;
 
-	// 250
-	public static final int NUM_CONFORMATIONS = 250;
+	/**
+	 *
+	 * 06.09.2024 Set to 200 to be aligned with PheSA
+	 */
+	public static final int NUM_CONFORMATIONS = 200;
 
 	public static final int MAX_NUM_SOLUTIONS = 1000;
 
@@ -154,6 +157,8 @@ public class DescriptorHandlerFlexophore implements IDescriptorHandlerFlexophore
 
 	private boolean singleConformationModeQuery;
 	private boolean includeNodeAtoms;
+
+	private SolutionCompleteGraph solution;
 
 	private ThreadMaster threadMaster;
 
@@ -382,6 +387,7 @@ public class DescriptorHandlerFlexophore implements IDescriptorHandlerFlexophore
 		return mdhv;
 	}
 
+
 	public MolDistHist createDescriptor(Object mol) {
 		StereoMolecule fragBiggest = (StereoMolecule)mol;
 
@@ -436,9 +442,7 @@ public class DescriptorHandlerFlexophore implements IDescriptorHandlerFlexophore
 	public MolDistHistViz createVisualDescriptor(StereoMolecule fragBiggest) {
 
 		MolDistHistViz mdhv = null;
-
 		recentException = null;
-
 		try {
 			mdhv = creatorMolDistHistViz.create(fragBiggest);
 		} catch (Exception e) {
@@ -453,8 +457,11 @@ public class DescriptorHandlerFlexophore implements IDescriptorHandlerFlexophore
 				recentException = e;
 			}
 		}
-
 		return mdhv;
+	}
+
+	public MolDistHistViz createVisualDescriptor(ConformerSet cs){
+		return creatorMolDistHistViz.createFromConformerSet(cs);
 	}
 
 	public Exception getRecentException() {
@@ -521,9 +528,15 @@ public class DescriptorHandlerFlexophore implements IDescriptorHandlerFlexophore
 
 		double sc = (float)cgMatcher.calculateSimilarity();
 
+		solution = cgMatcher.getBestMatchingSolution();
+
 		queueCGM.add(cgMatcher);
 
 		return sc;
+	}
+
+	public SolutionCompleteGraph getRecentSolution(){
+		return solution;
 	}
 
 	/**
