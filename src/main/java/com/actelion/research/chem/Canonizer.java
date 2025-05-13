@@ -170,12 +170,12 @@ public class Canonizer {
 	private boolean[] mNitrogenQualifiesForParity;
 	private ArrayList<CanonizerFragment> mFragmentList;
 	private ArrayList<int[]> mTHParityNormalizationGroupList;
-	private int mMode,mNoOfRanks,mNoOfPseudoGroups;
+	private final int mMode;
+	private int mNoOfRanks,mNoOfPseudoGroups;
 	private boolean mIsOddParityRound;
-	private boolean mZCoordinatesAvailable;
+	private final boolean mZCoordinatesAvailable,mAllHydrogensAreExplicit;
 	private boolean mCIPParityNoDistinctionProblem;
 	private boolean mEncodeAvoid127;
-
 	private boolean mGraphGenerated;
 	private int mGraphRings,mFeatureBlock;
 	private int[] mGraphAtom;
@@ -184,9 +184,10 @@ public class Canonizer {
 	private int[] mGraphFrom;
 	private int[] mGraphClosure;
 
-	private String		    mIDCode, mEncodedCoords,mMapping;
-	private StringBuilder	mEncodingBuffer;
-	private	int				mEncodingBitsAvail,mEncodingTempData,mAtomBits,mMaxConnAtoms;
+	private String mIDCode, mEncodedCoords,mMapping;
+	private StringBuilder mEncodingBuffer;
+	private	int mEncodingBitsAvail,mEncodingTempData,mMaxConnAtoms;
+	private final int mAtomBits;
 
 	/**
 	 * Runs a canonicalization procedure for the given molecule that creates unique atom ranks,
@@ -204,7 +205,7 @@ public class Canonizer {
 	 * If mode includes ENCODE_ATOM_CUSTOM_LABELS, than custom atom labels are
 	 * considered for the atom ranking and are encoded into the idcode.<br>
 	 * If mode includes COORDS_ARE_3D, then getEncodedCoordinates() always returns
-	 * a 3D-encoding even if all z-coordinates are 0.0. Otherwise coordinates are
+	 * a 3D-encoding even if all z-coordinates are 0.0. Otherwise, coordinates are
 	 * encoded in 3D only, if at least one of the z-coords is not 0.0.
 	 * @param mol
 	 * @param mode 0 or one or more of CONSIDER...TOPICITY, CREATE..., ENCODE_ATOM_CUSTOM_LABELS, ASSIGN_PARITIES_TO_TETRAHEDRAL_N, COORDS_ARE_3D
@@ -225,6 +226,8 @@ public class Canonizer {
 			canFindNitrogenQualifyingForParity();
 
 		mZCoordinatesAvailable = ((mode & COORDS_ARE_3D) != 0) || mMol.is3D();
+
+		mAllHydrogensAreExplicit = (mMol.getImplicitHydrogens() == 0);
 
 		if ((mMode & NEGLECT_ANY_STEREO_INFORMATION) == 0) {
 			mTHParity = new byte[mMol.getAtoms()];
@@ -627,7 +630,7 @@ System.out.println("mEZParity["+bond+"] = "+mEZParity[bond]);
 	private void canBreakTiesRandomly() {
 		for (int atom=0; atom<mMol.getAtoms(); atom++) {
 			mCanBase[atom].init(atom);
-			mCanBase[atom].add(mAtomBits+1, 2*mCanRank[atom]);
+			mCanBase[atom].add(mAtomBits+1, (long)2*mCanRank[atom]);
 			}
 
 		// promote randomly one atom of lowest shared rank.
@@ -883,7 +886,7 @@ System.out.println("mEZParity["+bond+"] = "+mEZParity[bond]);
 					thParityInfo |= mTHESRGroup[atom];
 					}
 
-				mCanBase[atom].add(2 * parityInfoBits, thParityInfo << parityInfoBits); // generate space for bond parity
+				mCanBase[atom].add(2 * parityInfoBits, (long)thParityInfo << parityInfoBits); // generate space for bond parity
 				}
 
 			for (int bond=0; bond<mMol.getBonds(); bond++) {
@@ -3175,6 +3178,41 @@ System.out.println();
 				}
 			}
 
+		if (mAllHydrogensAreExplicit && (mMode & ENCODE_ATOM_SELECTION) != 0) {
+			count = 0;
+			int connBits = 0;
+			for (int atom=0; atom<mMol.getAtoms(); atom++) {
+				int conns = 0;
+				for (int j=mMol.getConnAtoms(mGraphAtom[atom]); j<mMol.getAllConnAtoms(mGraphAtom[atom]); j++) {
+					if (mMol.isSelectedAtom(mMol.getConnAtom(mGraphAtom[atom], j))) {
+						int hIndex = j - mMol.getConnAtoms(mGraphAtom[atom]);
+						conns |= (1 << hIndex);
+						connBits = Math.max(connBits, hIndex+1);
+						}
+					}
+				if (conns != 0)
+					count++;
+				}
+			if (count != 0) {
+				encodeFeatureNo(38);    // 38 = datatype 'selected hydrogens'
+				encodeBits(count, nbits);
+				encodeBits(connBits, 3);
+				for (int atom=0; atom<mMol.getAtoms(); atom++) {
+					int conns = 0;
+					for (int j=mMol.getConnAtoms(mGraphAtom[atom]); j<mMol.getAllConnAtoms(mGraphAtom[atom]); j++) {
+						if (mMol.isSelectedAtom(mMol.getConnAtom(mGraphAtom[atom], j))) {
+							int hIndex = j - mMol.getConnAtoms(mGraphAtom[atom]);
+							conns |= (1 << hIndex);
+							}
+						}
+					if (conns != 0) {
+						encodeBits(atom, nbits);
+						encodeBits(conns, connBits);
+						}
+					}
+				}
+			}
+
 		encodeBits(0, 1);
 		mIDCode = encodeBitsEnd();
 		}
@@ -3322,7 +3360,7 @@ System.out.println();
 	 * original molecule including coordinates.<br>
 	 * If keepPositionAndScale==false, then coordinate encoding will be relative,
 	 * i.e. scale and absolute positions get lost during the encoding.
-	 * Otherwise the encoding retains scale and absolute positions.<br>
+	 * Otherwise, the encoding retains scale and absolute positions.<br>
 	 * If the molecule has 3D-coordinates and if there are no implicit hydrogen atoms,
 	 * i.e. all hydrogen atoms are explicitly available with their coordinates, then
 	 * hydrogen 3D-coordinates are also encoded despite the fact that the idcode itself does
@@ -3370,25 +3408,14 @@ System.out.println();
 			}
 
 		// if we have 3D-coords and explicit hydrogens and if all hydrogens are explicit then encode hydrogen coordinates
-		boolean includeHydrogenCoordinates = false;
-		if (mZCoordinatesAvailable
-		 && mMol.getAllAtoms() > mMol.getAtoms()
-		 && !mMol.isFragment()) {
-			includeHydrogenCoordinates = true;
-			for (int i=0; i<mMol.getAtoms(); i++) {
-				if (mMol.getImplicitHydrogens(i) != 0) {
-					includeHydrogenCoordinates = false;
-					break;
-					}
-				}
-			}
+		boolean includeHydrogenCoordinates = mZCoordinatesAvailable & mAllHydrogensAreExplicit;
 
 		int resolutionBits = mZCoordinatesAvailable ? 16 : 8;	// must be an even number
 		encodeBitsStart(true);
 		mEncodingBuffer.append(includeHydrogenCoordinates ? '#' : '!');
 		encodeBits(mZCoordinatesAvailable ? 1 : 0, 1);
 		encodeBits(keepPositionAndScale ? 1 : 0, 1);
-		encodeBits(resolutionBits/2, 4);	// resolution bits devided by 2
+		encodeBits(resolutionBits >> 1, 4);	// resolution bits divided by 2
 
 		double maxDelta = 0.0;
 		for (int i=1; i<mMol.getAtoms(); i++)
@@ -3407,8 +3434,8 @@ System.out.println();
 			}
 
 		int binCount = (1 << resolutionBits);
-		double increment = maxDelta / (binCount / 2.0 - 1);
-		double maxDeltaPlusHalfIncrement = maxDelta + increment / 2.0;
+		double increment = maxDelta / ((binCount >> 1) - 1);
+		double maxDeltaPlusHalfIncrement = maxDelta + 0.5 * increment;
 
 		for (int i=1; i<mMol.getAtoms(); i++)
 			encodeCoords(mGraphAtom[i], (mGraphFrom[i] == -1) ? -1 : mGraphAtom[mGraphFrom[i]], maxDeltaPlusHalfIncrement, increment, resolutionBits, coords);

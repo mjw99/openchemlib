@@ -38,22 +38,22 @@ import com.actelion.research.chem.coords.CoordinateInventor;
 import com.actelion.research.chem.io.RDFileParser;
 import com.actelion.research.chem.io.RXNFileParser;
 import com.actelion.research.chem.name.StructureNameResolver;
-import com.actelion.research.chem.reaction.*;
+import com.actelion.research.chem.reaction.IReactionMapper;
+import com.actelion.research.chem.reaction.Reaction;
+import com.actelion.research.chem.reaction.ReactionArrow;
+import com.actelion.research.chem.reaction.ReactionEncoder;
+import com.actelion.research.chem.reaction.mapping.SimilarityGraphBasedReactionMapper;
 import com.actelion.research.gui.FileHelper;
 import com.actelion.research.gui.LookAndFeelHelper;
 import com.actelion.research.gui.clipboard.IClipboardHandler;
 import com.actelion.research.gui.generic.*;
 import com.actelion.research.gui.hidpi.HiDPIHelper;
-import com.actelion.research.gui.swing.SwingCursorHelper;
 import com.actelion.research.util.ColorHelper;
 
-import java.awt.*;
 import java.awt.geom.Point2D;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
-import java.util.TreeMap;
 
 public class GenericEditorArea implements GenericEventListener {
 	public static final int MODE_MULTIPLE_FRAGMENTS = 1;
@@ -108,8 +108,8 @@ public class GenericEditorArea implements GenericEventListener {
 	private static final long WARNING_MILLIS = 1200;
 
 	private static final float FRAGMENT_MAX_CLICK_DISTANCE = 24.0f;
-	private static final float FRAGMENT_GROUPING_DISTANCE = 1.4f;    // in average bond lengths
-	private static final float FRAGMENT_CLEANUP_DISTANCE = 1.5f;    // in average bond lengths
+	private static final float FRAGMENT_GROUPING_DISTANCE = CoordinateInventor.JOIN_DISTANCE_UNCHARGED_FRAGMENTS + 0.1f;    // in average bond lengths
+	private static final float FRAGMENT_CLEANUP_DISTANCE = CoordinateInventor.JOIN_DISTANCE_UNCHARGED_FRAGMENTS + 0.2f; // in average bond lengths
 	private static final float DEFAULT_ARROW_LENGTH = 0.08f;        // relative to panel width
 
 	protected static final int UPDATE_NONE = 0;
@@ -149,11 +149,13 @@ public class GenericEditorArea implements GenericEventListener {
 
 	private static IReactionMapper sMapper;
 	private static String[][] sReactionQueryTemplates;
+	private final int mMaxAVBL;
 	private int mMode, mChainAtoms, mCurrentTool, mCustomAtomicNo, mCustomAtomMass, mCustomAtomValence, mCustomAtomRadical,
 			mCurrentHiliteAtom, mCurrentHiliteBond, mPendingRequest, mEventsScheduled, mFirstAtomKey,
-			mCurrentCursor, mReactantCount, mUpdateMode, mDisplayMode, mAtom1, mAtom2, mMaxAVBL, mAllowedPseudoAtoms;
+			mCurrentCursor, mReactantCount, mUpdateMode, mDisplayMode, mAtom1, mAtom2, mAllowedPseudoAtoms;
 	private int[] mChainAtom, mFragmentNo, mHiliteBondSet;
-	private double mX1, mY1, mX2, mY2, mWidth, mHeight, mUIScaling, mTextSizeFactor;
+	private final double mUIScaling;
+	private double mX1, mY1, mX2, mY2, mWidth, mHeight, mTextSizeFactor;
 	private double[] mX, mY, mChainAtomX, mChainAtomY;
 	private boolean mAltIsDown, mShiftIsDown, mMouseIsDown, mIsAddingToSelection, mAtomColorSupported, mAllowQueryFeatures,
 			mAllowFragmentChangeOnPasteOrDrop;
@@ -170,9 +172,9 @@ public class GenericEditorArea implements GenericEventListener {
 	private GenericPolygon mLassoRegion;
 	private ArrayList<GenericEventListener> mListeners;
 	private IClipboardHandler mClipboardHandler;
-	private StringBuilder mAtomKeyStrokeBuffer;
-	private GenericUIHelper mUIHelper;
-	private GenericCanvas mCanvas;
+	private final StringBuilder mAtomKeyStrokeBuffer;
+	private final GenericUIHelper mUIHelper;
+	private final GenericCanvas mCanvas;
 
 	/**
 	 * @param mol  an empty or valid stereo molecule
@@ -199,7 +201,7 @@ public class GenericEditorArea implements GenericEventListener {
 		mAllowQueryFeatures = true;
 		mAllowFragmentChangeOnPasteOrDrop = false;
 		mPendingRequest = cRequestNone;
-		mCurrentCursor = SwingCursorHelper.cPointerCursor;
+		mCurrentCursor = GenericCursorHelper.cPointerCursor;
 		mAtomKeyStrokeBuffer = new StringBuilder();
 
 		mAllowedPseudoAtoms = DEFAULT_ALLOWED_PSEUDO_ATOMS;
@@ -281,7 +283,7 @@ public class GenericEditorArea implements GenericEventListener {
 		context.setRGB(background);
 		context.fillRectangle(0, 0, mWidth, mHeight);
 
-		if ((mMode & MODE_REACTION) != 0 && mDrawingObjectList.size() == 0) {
+		if ((mMode & MODE_REACTION) != 0 && mDrawingObjectList.isEmpty()) {
 			float mx = 0.5f * (float)mWidth;
 			float my = 0.5f * (float)mHeight;
 			float dx = 0.5f * DEFAULT_ARROW_LENGTH * (float)mWidth;
@@ -592,11 +594,12 @@ public class GenericEditorArea implements GenericEventListener {
 	public void toolChanged(int newTool) {
 		if (mCurrentTool != newTool) {
 			if (mCurrentTool == GenericEditorToolbar.cToolMapper
-					|| newTool == GenericEditorToolbar.cToolMapper) {
+			 || newTool == GenericEditorToolbar.cToolMapper) {
+				mCurrentTool = newTool;
 				update(UPDATE_REDRAW);
+			} else {
+				mCurrentTool = newTool;
 			}
-
-			mCurrentTool = newTool;
 		}
 	}
 
@@ -979,14 +982,18 @@ public class GenericEditorArea implements GenericEventListener {
 			}
 
 			if (e.getButton() == 1) {
+				mMouseIsDown = false;
+				updateCursor();
+				mouseReleasedButton1();
+			}
+		}
+
+		if (e.getWhat() == GenericMouseEvent.MOUSE_CLICKED) {
+			if (e.getButton() == 1) {
 				if (e.getClickCount() == 2) {
 					handleDoubleClick(e.getX(), e.getY());
 					return;
 				}
-
-				mMouseIsDown = false;
-				updateCursor();
-				mouseReleasedButton1();
 			}
 		}
 
@@ -1016,75 +1023,8 @@ public class GenericEditorArea implements GenericEventListener {
 
 			switch (mPendingRequest) {
 				case cRequestNewChain:
-					double lastX, lastY;
-					if (mChainAtoms>0) {
-						lastX = mChainAtomX[mChainAtoms - 1];
-						lastY = mChainAtomY[mChainAtoms - 1];
-					} else {
-						lastX = 0;
-						lastY = 0;
-					}
-					double avbl = getScaledAVBL();
-					double s0 = (int)avbl;
-					double s1 = (int)(0.866 * avbl);
-					double s2 = (int)(0.5 * avbl);
-					double dx = mX2 - mX1;
-					double dy = mY2 - mY1;
-					if (Math.abs(dy)>Math.abs(dx)) {
-						mChainAtoms = (int)(2 * Math.abs(dy) / (s0 + s2));
-						if (Math.abs(dy) % (s0 + s2)>s0) {
-							mChainAtoms++;
-						}
-						mChainAtomX = new double[mChainAtoms];
-						mChainAtomY = new double[mChainAtoms];
-						if (mX2<mX1) {
-							s1 = -s1;
-						}
-						if (mY2<mY1) {
-							s0 = -s0;
-							s2 = -s2;
-						}
-						for (int i = 0; i<mChainAtoms; i++) {
-							mChainAtomX[i] = mX1 + ((i + 1) / 2) * s1;
-							mChainAtomY[i] = mY1 + ((i + 1) / 2) * (s0 + s2);
-							if ((i & 1) == 0) {
-								mChainAtomY[i] += s0;
-							}
-						}
-					} else {
-						mChainAtoms = (int)(Math.abs(dx) / s1);
-						mChainAtomX = new double[mChainAtoms];
-						mChainAtomY = new double[mChainAtoms];
-						if (mX2<mX1) {
-							s1 = -s1;
-						}
-						if (mY2<mY1) {
-							s2 = -s2;
-						}
-						for (int i = 0; i<mChainAtoms; i++) {
-							mChainAtomX[i] = mX1 + (i + 1) * s1;
-							mChainAtomY[i] = mY1;
-							if ((i & 1) == 0) {
-								mChainAtomY[i] += s2;
-							}
-						}
-					}
-					if (mChainAtoms>0) {
-						mChainAtom = new int[mChainAtoms];
-						for (int i = 0; i<mChainAtoms; i++) {
-							mChainAtom[i] = mMol.findAtom(mChainAtomX[i], mChainAtomY[i]);
-							if (mChainAtom[i] != -1) {
-								mChainAtomX[i] = mMol.getAtomX(mChainAtom[i]);
-								mChainAtomY[i] = mMol.getAtomY(mChainAtom[i]);
-							}
-						}
-						if (mChainAtomX[mChainAtoms - 1] != lastX
-								|| mChainAtomY[mChainAtoms - 1] != lastY) {
-							repaintNeeded = true;
-						}
-					} else if (lastX != 0 || lastY != 0) {
+					if (suggestNewChain())
 						repaintNeeded = true;
-					}
 					break;
 				case cRequestNewBond:
 					if ((mX2 - mX1) * (mX2 - mX1) + (mY2 - mY1) * (mY2 - mY1)<MIN_BOND_LENGTH_SQUARE) {
@@ -1204,6 +1144,94 @@ public class GenericEditorArea implements GenericEventListener {
 		}
 	}
 
+	private boolean suggestNewChain() {
+		double mouseAngle = Molecule.getAngle(mX1, mY1, mX2, mY2);
+
+		double mdx = mX2 - mX1;
+		double mdy = mY2 - mY1;
+
+		int lastChainAtoms = mChainAtoms;
+		int lastX1 = 0;
+		int lastY1 = 0;
+		int lastX2 = 0;
+		int lastY2 = 0;
+		if (lastChainAtoms > 0) {
+			lastX1 = (int)Math.round(mChainAtomX[0]);
+			lastY1 = (int)Math.round(mChainAtomY[0]);
+		}
+		if (lastChainAtoms > 1) {
+			lastX2 = (int)Math.round(mChainAtomX[1]);
+			lastY2 = (int)Math.round(mChainAtomY[1]);
+		}
+
+		double exitAngle = 0;
+		if (mAtom1 == -1 || mMol.getAllConnAtomsPlusMetalBonds(mAtom1) == 0) {
+			exitAngle = Math.PI / 3 * Math.round(mouseAngle * 3 / Math.PI);
+		}
+		else if (mMol.getAllConnAtomsPlusMetalBonds(mAtom1) == 1) {
+			double bondAngle = mMol.getBondAngle(mMol.getConnAtom(mAtom1, 0), mAtom1);
+			double candidate1 = bondAngle - Math.PI / 3;
+			double candidate2 = bondAngle + Math.PI / 3;
+			exitAngle = Math.abs(Molecule.getAngleDif(mouseAngle, candidate1))
+					  < Math.abs(Molecule.getAngleDif(mouseAngle, candidate2)) ? candidate1 : candidate2;
+		}
+		else {
+			double[] connAngle = new double[mMol.getAllConnAtomsPlusMetalBonds(mAtom1)];
+			for (int i=0; i<mMol.getAllConnAtomsPlusMetalBonds(mAtom1); i++)
+				connAngle[i] = mMol.getBondAngle(mAtom1, mMol.getConnAtom(mAtom1, i));
+
+			Arrays.sort(connAngle);
+			for (int i=0; i<connAngle.length; i++) {
+				double leftAngle = (i == 0) ? connAngle[connAngle.length-1] - 2.0*Math.PI : connAngle[i-1];
+				if (leftAngle < mouseAngle && mouseAngle < connAngle[i]) {
+					exitAngle = (connAngle[i] + leftAngle) / 2.0;
+					break;
+				}
+				if (leftAngle < mouseAngle - 2.0 * Math.PI && mouseAngle - 2.0 * Math.PI < connAngle[i]) {
+					exitAngle = (connAngle[i] + leftAngle) / 2.0;
+					break;
+				}
+			}
+		}
+
+		double avbl = getScaledAVBL();
+		mChainAtoms = Math.abs(Molecule.getAngleDif(mouseAngle, exitAngle)) > Math.PI / 3 ? 0 : (int)(Math.sqrt(mdx*mdx + mdy*mdy) / avbl);
+		if (mChainAtoms > 0) {
+			if (mChainAtomX == null || mChainAtomX.length < mChainAtoms) {
+				mChainAtomX = new double[mChainAtoms];
+				mChainAtomY = new double[mChainAtoms];
+			}
+			double[] dx = new double[2];
+			double[] dy = new double[2];
+			double nextAngle = Molecule.getAngleDif(mouseAngle, exitAngle) < 0 ? exitAngle - Math.PI / 3 : exitAngle + Math.PI / 3;
+			dx[0] = avbl * Math.sin(exitAngle);
+			dy[0] = avbl * Math.cos(exitAngle);
+			dx[1] = avbl * Math.sin(nextAngle);
+			dy[1] = avbl * Math.cos(nextAngle);
+			for (int i=0; i<mChainAtoms; i++) {
+				mChainAtomX[i] = (i == 0 ? mX1 : mChainAtomX[i-1]) + dx[i & 1];
+				mChainAtomY[i] = (i == 0 ? mY1 : mChainAtomY[i-1]) + dy[i & 1];
+			}
+
+			mChainAtom = new int[mChainAtoms];
+			for (int i = 0; i<mChainAtoms; i++) {
+				mChainAtom[i] = mMol.findAtom(mChainAtomX[i], mChainAtomY[i]);
+				if (mChainAtom[i] != -1) {
+					mChainAtomX[i] = mMol.getAtomX(mChainAtom[i]);
+					mChainAtomY[i] = mMol.getAtomY(mChainAtom[i]);
+				}
+			}
+		}
+
+		return lastChainAtoms != mChainAtoms
+			|| ((mChainAtoms != 0)
+			 && (lastX1 != (int)Math.round(mChainAtomX[0])
+			  || lastY1 != (int)Math.round(mChainAtomY[0])))
+			|| ((mChainAtoms > 1)
+			 && (lastX2 != (int)Math.round(mChainAtomX[1])
+			  || lastY2 != (int)Math.round(mChainAtomY[1])));
+	}
+
 	public void showHelpDialog() {
 		mUIHelper.showHelpDialog("/html/editor/editor.html", "Structure Editor Help");
 	}
@@ -1254,6 +1282,11 @@ public class GenericEditorArea implements GenericEventListener {
 			} else if (e.getKey() == GenericKeyEvent.KEY_HELP || (mCurrentHiliteAtom == -1 && e.getKey() == '?')) {
 				showHelpDialog();
 				return;
+			} else if (e.getKey() == GenericKeyEvent.KEY_ENTER) {
+				if (mAtomKeyStrokeBuffer.length() != 0) {
+					expandAtomKeyStrokes(mAtomKeyStrokeBuffer.toString());
+					mAtomKeyStrokeBuffer.setLength(0);
+				}
 			} else if (mCurrentHiliteBond != -1) {
 				int ch = e.getKey();
 				if (ch == 'q' && mMol.isFragment()) {
@@ -1270,14 +1303,14 @@ public class GenericEditorArea implements GenericEventListener {
 				} else {
 					boolean bondChanged =
 							(ch == '0') ? changeHighlightedBond(Molecule.cBondTypeMetalLigand)
-									: (ch == '1') ? changeHighlightedBond(Molecule.cBondTypeSingle)
-									: (ch == '2') ? changeHighlightedBond(Molecule.cBondTypeDouble)
-									: (ch == '3') ? changeHighlightedBond(Molecule.cBondTypeTriple)
-									: (ch == 'u') ? changeHighlightedBond(Molecule.cBondTypeUp)
-									: (ch == 'd') ? changeHighlightedBond(Molecule.cBondTypeDown)
-									: (ch == 'c') ? changeHighlightedBond(Molecule.cBondTypeCross)
-									: (ch == 'm') ? changeHighlightedBond(Molecule.cBondTypeMetalLigand)
-									: false;
+						  : (ch == '1') ? changeHighlightedBond(Molecule.cBondTypeSingle)
+						  : (ch == '2') ? changeHighlightedBond(Molecule.cBondTypeDouble)
+						  : (ch == '3') ? changeHighlightedBond(Molecule.cBondTypeTriple)
+						  : (ch == 'u') ? changeHighlightedBond(Molecule.cBondTypeUp)
+						  : (ch == 'd') ? changeHighlightedBond(Molecule.cBondTypeDown)
+						  : (ch == 'c') ? changeHighlightedBond(Molecule.cBondTypeCross)
+						  : (ch == 'm') ? changeHighlightedBond(Molecule.cBondTypeMetalLigand)
+						  : false;
 					if (bondChanged)
 						updateAndFireEvent(UPDATE_REDRAW);
 				}
@@ -1359,7 +1392,7 @@ public class GenericEditorArea implements GenericEventListener {
 				} else if (ch == '\n' || ch == '\r') {
 					expandAtomKeyStrokes(mAtomKeyStrokeBuffer.toString());
 				}
-			} else if (mCurrentHiliteAtom == -1 && mCurrentHiliteBond == -1) {
+			} else {
 				if ((mMode & (MODE_REACTION | MODE_MARKUSH_STRUCTURE | MODE_MULTIPLE_FRAGMENTS)) == 0) {
 					int ch = e.getKey();
 					if (ch == 'h')
@@ -1845,75 +1878,58 @@ public class GenericEditorArea implements GenericEventListener {
 					updateAndFireEvent(UPDATE_CHECK_COORDS);
 				break;
 			case GenericEditorToolbar.cToolAtomH:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 1, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(1);
 				break;
 			case GenericEditorToolbar.cToolAtomC:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 6, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(6);
 				break;
 			case GenericEditorToolbar.cToolAtomN:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 7, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(7);
 				break;
 			case GenericEditorToolbar.cToolAtomO:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 8, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(8);
 				break;
 			case GenericEditorToolbar.cToolAtomSi:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 14, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(14);
 				break;
 			case GenericEditorToolbar.cToolAtomP:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 15, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(15);
 				break;
 			case GenericEditorToolbar.cToolAtomS:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 16, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(16);
 				break;
 			case GenericEditorToolbar.cToolAtomF:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 9, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(9);
 				break;
 			case GenericEditorToolbar.cToolAtomCl:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 17, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(17);
 				break;
 			case GenericEditorToolbar.cToolAtomBr:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 35, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(35);
 				break;
 			case GenericEditorToolbar.cToolAtomI:
-				storeState();
-				if (mMol.addOrChangeAtom(mX1, mY1, 53, 0, -1, 0, null))
-					updateAndFireEvent(UPDATE_CHECK_COORDS);
+				changeAtomicNo(53);
 				break;
 			case GenericEditorToolbar.cToolCustomAtom:
-				if (gme.isControlDown()) {
+				if (gme.isControlDown() || gme.isAltDown()) {
 					int atom = mMol.findAtom(mX1, mY1);
 					if (atom != -1) {
 						showCustomAtomDialog(atom);
 					}
 				} else {
 					storeState();
-					if (mMol.addOrChangeAtom(mX1, mY1, mCustomAtomicNo, mCustomAtomMass, mCustomAtomValence, mCustomAtomRadical, mCustomAtomLabel))
+					if (mMol.addOrChangeAtom(mX1, mY1, mCustomAtomicNo, mCustomAtomMass, mCustomAtomValence, mCustomAtomRadical, mCustomAtomLabel)) {
+						mCurrentHiliteAtom = -1;
 						updateAndFireEvent(UPDATE_CHECK_COORDS);
+					}
 				}
 				break;
 			case GenericEditorToolbar.cToolMapper:
 				mAtom1 = mMol.findAtom(mX1, mY1);
-				if (mAtom1 != -1 && mAtom1<mMol.getAtoms()) {
+				if (mAtom1 != -1
+				 && mAtom1 < mMol.getAtoms()
+				 && (!mMol.isFragment()
+				  || (mMol.getAtomQueryFeatures(mAtom1) & Molecule.cAtomQFExcludeGroup) == 0)) {
 					mX1 = mMol.getAtomX(mAtom1);
 					mY1 = mMol.getAtomY(mAtom1);
 					mPendingRequest = cRequestMapAtoms;
@@ -1932,6 +1948,14 @@ public class GenericEditorArea implements GenericEventListener {
 				storeState();
 				update(UPDATE_CHECK_COORDS);
 				break;
+		}
+	}
+
+	private void changeAtomicNo(int atomicNo) {
+		storeState();
+		if (mMol.addOrChangeAtom(mX1, mY1, atomicNo, 0, -1, 0, null)) {
+			mCurrentHiliteAtom = -1;
+			updateAndFireEvent(UPDATE_CHECK_COORDS);
 		}
 	}
 
@@ -2025,6 +2049,13 @@ public class GenericEditorArea implements GenericEventListener {
 			case cRequestMapAtoms:
 				boolean mapNoChanged = false;
 				int atom2 = mCurrentHiliteAtom;
+
+				// exclude group atoms cannot be mapped
+				if (atom2 != -1
+				 && mMol.isFragment()
+				 && (mMol.getAtomQueryFeatures(atom2) & Molecule.cAtomQFExcludeGroup) != 0)
+					atom2 = -1;
+
 //				System.out.printf("Map Request Atom %d => %d (%d)\n", mAtom1, mAtom2, atom2);
 				int mapNoAtom1 = mMol.getAtomMapNo(mAtom1);
 				if (atom2 == -1) {
@@ -2083,12 +2114,34 @@ public class GenericEditorArea implements GenericEventListener {
 	}
 
 	/**
+	 * Considering all manually assigned atom mapping numbers from the display molecule,
+	 * copies them into the current fragments, creates a Reaction from these,
+	 * uses the SimilarityGraphBasedReactionMapper to map the reaction and returns the Reaction's mapping
+	 * into the display molecule.
+	 */
+	private void autoMapReaction() {
+		analyzeFragmentMembership();
+
+		// We take the current fragments into a reaction, which we map.
+		new SimilarityGraphBasedReactionMapper().map(getReaction());
+
+		// Copy new mapping numbers from current fragments into the display molecule,
+		// but mark all those atom as auto-mapped that originally were unmapped or auto-mapped.
+		int[] fragmentAtom = new int[mFragment.length];
+		for (int atom=0; atom<mMol.getAllAtoms(); atom++) {
+			int fragment = mFragmentNo[atom];
+			mMol.setAtomMapNo(atom, mFragment[fragment].getAtomMapNo(fragmentAtom[fragment]), mMol.getAtomMapNo(atom) == 0 || mMol.isAutoMappedAtom(atom));
+			fragmentAtom[fragment]++;
+		}
+	}
+
+	/**
 	 * Takes the manually mapped atom mapping numbers from the display molecule,
 	 * copies them into the current fragments, creates a reaction from these,
 	 * uses the MCS-mapper to map the reaction and returns the rxn's mapping
 	 * into the display molecule.
-	 */
-	private void autoMapReaction() {
+	 *
+	private void autoMapReactionOld() {
 		if (sMapper == null)
 			sMapper = new MCSReactionMapper();
 
@@ -2097,16 +2150,30 @@ public class GenericEditorArea implements GenericEventListener {
 //			return;
 //		}
 
+		final int fakeAtomMassBase = 512;
+
 		// We assume that we use the MCS-mapper, which doesn't care about manually mapped atoms.
 		// Thus, we need a hack to ensure that manually mapped atoms are reliably part of
-		// the MCS-mapper's result. Therefore we give every manually mapped atom pair a
+		// the MCS-mapper's result. Therefore, we give every manually mapped atom pair a
 		// unique fake atom mass. Original atom masses are copied and later restored.
 		// We also provide an updated SSSearcher(), which requires atom mass equivalence for
 		// atoms to match.
+		// In addition, any exclude group atom is always considered dissimilar to any other atom.
 
 		SSSearcher sss = new SSSearcher() {
 			@Override
 			public boolean areAtomsSimilar(int moleculeAtom, int fragmentAtom) {
+				// exclude group atoms are never similar
+				if ((mMolecule.isFragment()
+				  && (mMolecule.getAtomQueryFeatures(moleculeAtom) & Molecule.cAtomQFExcludeGroup) != 0)
+				 || (mFragment.isFragment()
+				  && (mFragment.getAtomQueryFeatures(fragmentAtom) & Molecule.cAtomQFExcludeGroup) != 0))
+					return false;
+
+				if (mMolecule.getAtomMass(moleculeAtom) > fakeAtomMassBase
+				 || mFragment.getAtomMass(fragmentAtom) > fakeAtomMassBase)
+					return mMolecule.getAtomMass(moleculeAtom) == mFragment.getAtomMass(fragmentAtom);
+
 				if (mMolecule.getAtomicNo(moleculeAtom) == mFragment.getAtomicNo(fragmentAtom)) {
 					if (mMolecule.getAtomMass(moleculeAtom) != mFragment.getAtomMass(fragmentAtom))
 						return false;
@@ -2136,8 +2203,6 @@ public class GenericEditorArea implements GenericEventListener {
 		TreeMap<Integer, Integer> oldToNewMapNo = new TreeMap<>();
 		int nextMapNo = 1;
 
-		final int fakeAtomMassBase = 512;
-
 		// Mark the manually mapped atoms such that the mapper uses them first priority and
 		// to be able to re-assign them later as manually mapped.
 		int[] fragmentAtom = new int[mFragment.length];
@@ -2150,7 +2215,7 @@ public class GenericEditorArea implements GenericEventListener {
 				// make sure that negative manual mapNo is in TreeMap
 				Integer newMapNo = oldToNewMapNo.get(-manualMapNo);
 				if (newMapNo == null)
-					oldToNewMapNo.put(-manualMapNo, newMapNo = new Integer(nextMapNo++));
+					oldToNewMapNo.put(-manualMapNo, newMapNo = nextMapNo++);
 
 				mFragment[fragment].setAtomMass(fragmentAtom[fragment], fakeAtomMassBase + newMapNo);
 			}
@@ -2184,7 +2249,7 @@ public class GenericEditorArea implements GenericEventListener {
 					if (generatedMapNo != 0) {
 						newMapNo = oldToNewMapNo.get(generatedMapNo);
 						if (newMapNo == null)
-							oldToNewMapNo.put(generatedMapNo, newMapNo = new Integer(nextMapNo++));
+							oldToNewMapNo.put(generatedMapNo, newMapNo = nextMapNo++);
 					}
 
 					mMol.setAtomMapNo(atom, newMapNo, true);
@@ -2202,36 +2267,7 @@ public class GenericEditorArea implements GenericEventListener {
 				fragmentAtom[fragment]++;
 			}
 		}
-
-
-//		mMapper.resetFragments(mappedReaction);
-
-//		AStarReactionMapper m = new AStarReactionMapper();
-//		Reaction rxn = getReaction();
-//		List<AStarReactionMapper.SlimMapping> l = m.map(rxn);
-//		if (l != null && l.size() > 0) {
-//			AStarReactionMapper.SlimMapping sm = l.get(0);
-////			int[] mps = sm.getMapping();
-////			for (int i = 0; i < mps.length; i++) {
-////				System.out.printf("Maps %d -> %d\n", i, mps[i]);
-////			}
-//			m.activateMapping(sm);
-////			for (int i = 0; i < mFragment.length; i++) {
-////				StereoMolecule mol = mFragment[i];
-////				for (int a = 0; a < mol.getAllAtoms(); a++) {
-////					System.out.printf("T Map %d = %d\n", a, mol.getAtomMapNo(a));
-////				}
-////			}
-//
-//			int[] fragmentAtom = new int[mFragment.length];
-//			for (int atom = 0; atom < mMol.getAllAtoms(); atom++) {
-//				int fragment = mFragmentNo[atom];
-//				if (mMol.getAtomMapNo(atom) == 0)
-//					mMol.setAtomMapNo(atom, mFragment[fragment].getAtomMapNo(fragmentAtom[fragment]), true);
-//				fragmentAtom[fragment]++;
-//			}
-//		}
-	}
+	}	*/
 
 	/**
 	 * Checks whether this bond is a stereo bond and whether it refers to a
@@ -2412,7 +2448,7 @@ public class GenericEditorArea implements GenericEventListener {
 	{
 		double newAngle = Math.PI * 2 / 3;
 		if (atom != -1) {
-			double angle[] = new double[MAX_CONNATOMS + 1];
+			double[] angle = new double[MAX_CONNATOMS + 1];
 			for (int i = 0; i<mMol.getAllConnAtomsPlusMetalBonds(atom); i++) {
 				angle[i] = mMol.getBondAngle(atom, mMol.getConnAtom(atom, i));
 			}
@@ -2604,7 +2640,7 @@ public class GenericEditorArea implements GenericEventListener {
 		mAtomKeyStrokeSuggestion = NamedSubstituents.identify(s);
 		if (mAtomKeyStrokeSuggestion == null)
 			return isValidAtomKeyStrokeStart(s) ? KEY_IS_VALID_START : KEY_IS_INVALID;
-		if (mAtomKeyStrokeSuggestion.length() == 0)
+		if (mAtomKeyStrokeSuggestion.isEmpty())
 			return KEY_IS_VALID_START;
 		else
 			return KEY_IS_SUBSTITUENT;
@@ -2632,10 +2668,12 @@ public class GenericEditorArea implements GenericEventListener {
 			if (mMol.changeAtom(mCurrentHiliteAtom, atomicNo, 0, -1, 0)) {
 				updateAndFireEvent(UPDATE_CHECK_COORDS);
 				return;
+			} else {
+				update(UPDATE_NONE);
 			}
 		}
 
-		if (mAtomKeyStrokeSuggestion != null && mAtomKeyStrokeSuggestion.length() != 0)
+		if (mAtomKeyStrokeSuggestion != null && !mAtomKeyStrokeSuggestion.isEmpty())
 			keyStrokes = mAtomKeyStrokeSuggestion;
 
 		StereoMolecule substituent = NamedSubstituents.getSubstituent(keyStrokes);
@@ -2713,8 +2751,8 @@ public class GenericEditorArea implements GenericEventListener {
 
 	private boolean shareSameReactionSide(int atom1, int atom2){
 		ReactionArrow arrow = (ReactionArrow)mDrawingObjectList.get(0);
-		return !(arrow.isOnProductSide(mMol.getAtomX(atom1), mMol.getAtomY(atom1))
-				^ arrow.isOnProductSide(mMol.getAtomX(atom2), mMol.getAtomY(atom2)));
+		return arrow.isOnProductSide(mMol.getAtomX(atom1), mMol.getAtomY(atom1))
+			== arrow.isOnProductSide(mMol.getAtomX(atom2), mMol.getAtomY(atom2));
 	}
 
 	protected void restoreState() {
@@ -2841,7 +2879,7 @@ public class GenericEditorArea implements GenericEventListener {
 
 	/**
 	 * Redraws the molecule(s) or the reaction after scaling coordinates.
-	 * Then analyses fragment membership and recreate individual molecules, reaction, or markush structure
+	 * Then analyses fragment membership and recreates individual molecules, reaction, or markush structure
 	 * Then, fires molecule change events with userChange=false, i.e. external change.
 	 */
 	public void moleculeChanged() {
@@ -2880,17 +2918,17 @@ public class GenericEditorArea implements GenericEventListener {
 		return mFragment;
 	}
 
-	public void setFragments(StereoMolecule[]fragment) {
+	public void setFragments(StereoMolecule[] fragment) {
 		mMol.clear();
 		mFragment = fragment;
-		for (int i = 0; i<fragment.length; i++) {
+		for (int i=0; i<fragment.length; i++) {
 			mMol.addMolecule(mFragment[i]);
 		}
 		storeState();
 
 		mFragmentNo = new int[mMol.getAllAtoms()];
-		for (int atom = 0, f = 0; f<mFragment.length; f++) {
-			for (int j = 0; j<mFragment[f].getAllAtoms(); j++) {
+		for (int atom=0, f=0; f<mFragment.length; f++) {
+			for (int j=0; j<mFragment[f].getAllAtoms(); j++) {
 				mFragmentNo[atom++] = f;
 			}
 		}
@@ -3291,7 +3329,7 @@ public class GenericEditorArea implements GenericEventListener {
 			fragmentDescriptor[fragment][0] = fragment;
 		}
 
-		Point[] fragmentCOG = calculateFragmentCenterOfGravity(fragmentNo, fragments);
+		Point2D.Double[] fragmentCOG = calculateFragmentCenterOfGravity(fragmentNo, fragments);
 
 		if ((mMode & MODE_REACTION) != 0) {
 			mReactantCount = 0;
@@ -3313,41 +3351,34 @@ public class GenericEditorArea implements GenericEventListener {
 			}
 		}
 
-		final Point[] cog = fragmentCOG;
-		Arrays.sort(fragmentDescriptor, new Comparator<int[]>() {
-			public int compare(int[] fragmentDescriptor1, int[] fragmentDescriptor2) {
-				if ((mMode & (MODE_REACTION | MODE_MARKUSH_STRUCTURE)) != 0) {
-					if (fragmentDescriptor1[1] != fragmentDescriptor2[1]) {
-						return (fragmentDescriptor1[1] == 0) ? -1 : 1;
-					}
+		final Point2D.Double[] cog = fragmentCOG;
+		Arrays.sort(fragmentDescriptor, (fragmentDescriptor1, fragmentDescriptor2) -> {
+			if ((mMode & (MODE_REACTION | MODE_MARKUSH_STRUCTURE)) != 0) {
+				if (fragmentDescriptor1[1] != fragmentDescriptor2[1]) {
+					return (fragmentDescriptor1[1] == 0) ? -1 : 1;
 				}
-
-				return (cog[fragmentDescriptor1[0]].x
-						+ cog[fragmentDescriptor1[0]].y
-						<cog[fragmentDescriptor2[0]].x
-						+ cog[fragmentDescriptor2[0]].y) ? -1 : 1;
 			}
+
+			return Double.compare(cog[fragmentDescriptor1[0]].x + cog[fragmentDescriptor1[0]].y,
+								  cog[fragmentDescriptor2[0]].x + cog[fragmentDescriptor2[0]].y);
 		});
 
 		int[] newFragmentIndex = new int[fragments];
-		Point[] centerOfGravity = new Point[fragments];
 		for (int fragment = 0; fragment<fragments; fragment++) {
 			int oldIndex = ((int[])fragmentDescriptor[fragment])[0];
 			newFragmentIndex[oldIndex] = fragment;
-			centerOfGravity[fragment] = fragmentCOG[oldIndex];
 		}
 
-		fragmentCOG = centerOfGravity;
 		for (int atom1 = 0; atom1<mMol.getAllAtoms(); atom1++) {
 			fragmentNo[atom1] = newFragmentIndex[fragmentNo[atom1]];
 		}
 	}
 
-	private Point[] calculateFragmentCenterOfGravity(int[] fragmentNo, int fragments){
-		Point[] fragmentCOG = new Point[fragments];
+	private Point2D.Double[] calculateFragmentCenterOfGravity(int[] fragmentNo, int fragments){
+		Point2D.Double[] fragmentCOG = new Point2D.Double[fragments];
 		int[] fragmentAtoms = new int[fragments];
 		for (int fragment = 0; fragment<fragments; fragment++) {
-			fragmentCOG[fragment] = new Point(0, 0);
+			fragmentCOG[fragment] = new Point2D.Double();
 		}
 		for (int atom = 0; atom<mMol.getAllAtoms(); atom++) {
 			fragmentCOG[fragmentNo[atom]].x += mMol.getAtomX(atom);
@@ -3365,39 +3396,39 @@ public class GenericEditorArea implements GenericEventListener {
 		int cursor = -1;
 		switch (mCurrentTool) {
 			case GenericEditorToolbar.cToolZoom:
-				cursor = SwingCursorHelper.cZoomCursor;
+				cursor = GenericCursorHelper.cZoomCursor;
 				break;
 			case GenericEditorToolbar.cToolLassoPointer:
 				if ((mCurrentHiliteAtom != -1 && mMol.isSelectedAtom(mCurrentHiliteAtom))
 						|| (mCurrentHiliteBond != -1 && mMol.isSelectedBond(mCurrentHiliteBond))) {
-					cursor = mMouseIsDown ? SwingCursorHelper.cFistCursor
-							: mShiftIsDown ? SwingCursorHelper.cHandPlusCursor
-							: SwingCursorHelper.cHandCursor;
+					cursor = mMouseIsDown ? GenericCursorHelper.cFistCursor
+							: mShiftIsDown ? GenericCursorHelper.cHandPlusCursor
+							: GenericCursorHelper.cHandCursor;
 				} else if (mCurrentHiliteAtom != -1
 						|| mCurrentHiliteBond != -1) {
-					cursor = SwingCursorHelper.cPointerCursor;
+					cursor = GenericCursorHelper.cPointerCursor;
 				} else if (mCurrentHiliteObject != null) {
-					cursor = mMouseIsDown ? SwingCursorHelper.cFistCursor
+					cursor = mMouseIsDown ? GenericCursorHelper.cFistCursor
 							: (mShiftIsDown
 							&& !(mCurrentHiliteObject instanceof ReactionArrow)) ?
-							SwingCursorHelper.cHandPlusCursor : SwingCursorHelper.cHandCursor;
+							GenericCursorHelper.cHandPlusCursor : GenericCursorHelper.cHandCursor;
 				} else {
 					cursor = mShiftIsDown ?
-							(mAltIsDown ? SwingCursorHelper.cSelectRectPlusCursor : SwingCursorHelper.cLassoPlusCursor)
-							: (mAltIsDown ? SwingCursorHelper.cSelectRectCursor : SwingCursorHelper.cLassoCursor);
+							(mAltIsDown ? GenericCursorHelper.cSelectRectPlusCursor : GenericCursorHelper.cLassoPlusCursor)
+							: (mAltIsDown ? GenericCursorHelper.cSelectRectCursor : GenericCursorHelper.cLassoCursor);
 				}
 				break;
 			case GenericEditorToolbar.cToolDelete:
-				cursor = SwingCursorHelper.cDeleteCursor;
+				cursor = GenericCursorHelper.cDeleteCursor;
 				break;
 			case GenericEditorToolbar.cToolChain:
-				cursor = SwingCursorHelper.cChainCursor;
+				cursor = GenericCursorHelper.cChainCursor;
 				break;
 			case GenericEditorToolbar.cToolText:
-				cursor = SwingCursorHelper.cTextCursor;
+				cursor = GenericCursorHelper.cTextCursor;
 				break;
 			default:
-				cursor = SwingCursorHelper.cPointerCursor;
+				cursor = GenericCursorHelper.cPointerCursor;
 				break;
 		}
 

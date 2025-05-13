@@ -29,7 +29,9 @@
 package org.openmolecules.chem.conf.gen;
 
 import com.actelion.research.calc.ThreadMaster;
-import com.actelion.research.chem.*;
+import com.actelion.research.chem.Coordinates;
+import com.actelion.research.chem.Molecule;
+import com.actelion.research.chem.StereoMolecule;
 import com.actelion.research.chem.conf.Conformer;
 import com.actelion.research.chem.conf.TorsionDB;
 import com.actelion.research.chem.conf.VDWRadii;
@@ -81,21 +83,22 @@ public class ConformerGenerator {
 	// We try to translate arbitrary collision values into a kcal/mol energy scale
 	public static final double COLLISION_STRAIN_TO_ENERGY_FACTOR = 20;
 
-	private StereoMolecule		mMolecule;
+	private StereoMolecule mMolecule;
 	private TreeMap<int[],BaseConformer> mBaseConformerMap;
-	private RotatableBond[]		mRotatableBond;
-	private RigidFragment[]     mRigidFragment;
+	private RotatableBond[] mRotatableBond;
+	private RigidFragment[] mRigidFragment;
 	private ConformationSelfOrganizer mSelfOrganizer;
-	private RigidFragmentProvider mRigidFragmentProvider;
-	private TorsionSetStrategy	mTorsionSetStrategy;
-	private TorsionSet			mTorsionSet;
-	private long				mRandomSeed;
-	private int					mDisconnectedFragmentCount,mAllConformerCount,mReturnedConformerCount;
-	private boolean				mUseSelfOrganizerIfAllFails,mIsDiagnosticsMode,mIsFinished;
-	private int[]				mFragmentNo,mDisconnectedFragmentNo,mDisconnectedFragmentSize;
-	private boolean[][]			mSkipCollisionCheck;
-	private Random				mRandom;
-	private ThreadMaster        mThreadMaster;
+	private final RigidFragmentProvider mRigidFragmentProvider;
+	private TorsionSetStrategy mTorsionSetStrategy;
+	private TorsionSet mTorsionSet;
+	private final long mRandomSeed;
+	private long mTimeOut,mStopMillis;
+	private int mDisconnectedFragmentCount,mAllConformerCount,mReturnedConformerCount;
+	private boolean mUseSelfOrganizerIfAllFails,mIsDiagnosticsMode,mIsFinished;
+	private int[] mFragmentNo,mDisconnectedFragmentNo,mDisconnectedFragmentSize;
+	private boolean[][] mSkipCollisionCheck;
+	private final Random mRandom;
+	private ThreadMaster mThreadMaster;
 	private ConformerSetDiagnostics mDiagnostics;
 
 	/**
@@ -115,17 +118,18 @@ public class ConformerGenerator {
 		for (int atom=0; atom<mol.getAtoms(); atom++)
 			implicitHydrogen[atom] = mol.getImplicitHydrogens(atom);
 
-		double hydrogenBondLength = 0.8 * mol.getAverageBondLength();
-
 		for (int atom=0; atom<implicitHydrogen.length; atom++)
 			if (implicitHydrogen[atom] != 0)
 				for (int i=0; i<implicitHydrogen[atom]; i++)
 					mol.addBond(atom, mol.addAtom(1), Molecule.cBondTypeSingle);
 
 		mol.ensureHelperArrays(Molecule.cHelperNeighbours);
+
+		double bondLength = 0.8 * mol.getAverageBondLength();
+
 		for (int atom=0; atom<implicitHydrogen.length; atom++)
 			if (implicitHydrogen[atom] != 0)
-				setHydrogenLocations(mol, atom, implicitHydrogen[atom], hydrogenBondLength);
+				setHydrogenLocations(mol, atom, implicitHydrogen[atom], bondLength);
 
 		// addAtom() and addBond() clear the helper status, i.e. flag all helpers as invalid.
 		// Adding hydrogens does not destroy parities. Though, we may flag them to be valid again.
@@ -140,9 +144,9 @@ public class ConformerGenerator {
 	 * @param mol
 	 * @param atom
 	 * @param newHydrogenCount new hydrogen atoms added to atom
-	 * @param avbl
+	 * @param bondLength
 	 */
-	private static void setHydrogenLocations(StereoMolecule mol, int atom, int newHydrogenCount, double avbl) {
+	private static void setHydrogenLocations(StereoMolecule mol, int atom, int newHydrogenCount, double bondLength) {
 		int firstNewHydrogenConnIndex = mol.getAllConnAtoms(atom) - newHydrogenCount;
 
 		int stereoBondIndex = -1;
@@ -201,8 +205,9 @@ public class ConformerGenerator {
 					}
 				}
 			int newHydrogen = mol.getConnAtom(atom, firstNewHydrogenConnIndex+i);
-			mol.setAtomX(newHydrogen, mol.getAtomX(atom) + avbl * Math.sin(hydrogenAngle));
-			mol.setAtomY(newHydrogen, mol.getAtomY(atom) + avbl * Math.cos(hydrogenAngle));
+
+			mol.setAtomX(newHydrogen, mol.getAtomX(atom) + bondLength * Math.sin(hydrogenAngle));
+			mol.setAtomY(newHydrogen, mol.getAtomY(atom) + bondLength * Math.cos(hydrogenAngle));
 			}
 		}
 
@@ -296,6 +301,21 @@ public class ConformerGenerator {
 	}
 
 	/**
+	 * If the conformer generation shall be stopped after a certain time
+	 * of unsuccessfully trying generating conformers, then set a timeout.
+	 * @param millis milli-seconds after which to stop the conformer generation or 0L to remove the timeout
+	 */
+	public void setTimeOut(long millis) {
+		mTimeOut = millis;
+		applyTimeOut();
+	}
+
+	public void applyTimeOut() {
+		mStopMillis = (mTimeOut == 0L) ? 0L : System.currentTimeMillis() + mTimeOut;
+		mRigidFragmentProvider.setStopTime(mStopMillis);
+	}
+
+	/**
 	 * If the conformer generation must be stopped from outside, for instance because of user
 	 * intervention or because of a defined timeout, then provide a ThreadMaster with this method.
 	 * @param tm
@@ -303,6 +323,11 @@ public class ConformerGenerator {
 	public void setThreadMaster(ThreadMaster tm) {
 		mThreadMaster = tm;
 		mRigidFragmentProvider.setThreadMaster(tm);
+	}
+
+	private boolean mustStop() {
+		return (mThreadMaster != null && mThreadMaster.threadMustDie())
+			|| (mStopMillis != 0 && System.currentTimeMillis() > mStopMillis);
 	}
 
 	/**
@@ -344,6 +369,8 @@ public class ConformerGenerator {
 			}
 		else {
 			ConformationSelfOrganizer sampler = new ConformationSelfOrganizer(mol, true);
+			sampler.setThreadMaster(mThreadMaster);
+			sampler.setStopTime(mStopMillis);
 			Conformer conformer = sampler.generateOneConformer(mRandomSeed);
 			separateDisconnectedFragments(conformer);
 			conformer.setName("SO#1");
@@ -363,6 +390,7 @@ public class ConformerGenerator {
 		 * @param use60degreeSteps use 60 degree steps for every rotatable bond instead of torsion DB
 		 */
 	protected boolean initialize(StereoMolecule mol, boolean use60degreeSteps) {
+		applyTimeOut();
 		mSelfOrganizer = null;
 
 		mol.ensureHelperArrays(Molecule.cHelperNeighbours);
@@ -529,11 +557,11 @@ public class ConformerGenerator {
 			return null;
 
 		// create a base conformer from first set of fragments and calculate torsion likelihoods
-		if (mBaseConformerMap.size() == 0)
+		if (mBaseConformerMap.isEmpty())
 			getBaseConformer(new int[mRigidFragment.length]);
 
 		mTorsionSet = mTorsionSetStrategy.getNextTorsionSet(mTorsionSet, mDiagnostics);
-		while (mTorsionSet != null && (mThreadMaster == null || !mThreadMaster.threadMustDie())) {
+		while (mTorsionSet != null && !mustStop()) {
 			BaseConformer baseConformer = getBaseConformer(mTorsionSet.getConformerIndexes());
 			if (mTorsionSet.getConformer() == null) {
 				mTorsionSet.setConformer(baseConformer.deriveConformer(mTorsionSet.getTorsionIndexes(), "#" + (++mAllConformerCount)));
@@ -560,10 +588,11 @@ public class ConformerGenerator {
 				if (mTorsionSet != null || mReturnedConformerCount != 0)
 					continue;
 
-				if (mTorsionSet == null && mUseSelfOrganizerIfAllFails) {
+				if (mUseSelfOrganizerIfAllFails) {
 					// We couldn't create torsion strategy based conformers: switch to self organizer!
 					mSelfOrganizer = new ConformationSelfOrganizer(mMolecule, true);
 					mSelfOrganizer.setThreadMaster(mThreadMaster);
+					mSelfOrganizer.setStopTime(mStopMillis);
 					mSelfOrganizer.initializeConformers(mRandomSeed, -1);
 					SelfOrganizedConformer conformer = mSelfOrganizer.getNextConformer();
 					if (conformer != null) {
@@ -597,6 +626,8 @@ public class ConformerGenerator {
 //			else if (mReturnedConformerCount == 0) {
 //				// We couldn't create torsion strategy based conformers: try creating one conformer with self organizer!
 //				ConformationSelfOrganizer sampler = new ConformationSelfOrganizer(mMolecule, true);
+//	    		sampler.setThreadMaster(mThreadMaster);
+//  			sampler.setStopTime(mStopMillis);
 //				Conformer conformer = sampler.generateOneConformer(mRandomSeed);
 //				separateDisconnectedFragments(conformer);
 //				mReturnedConformerCount++;
@@ -693,6 +724,7 @@ public class ConformerGenerator {
 		if (mRotatableBond == null) {
 			mSelfOrganizer = new ConformationSelfOrganizer(mol, true);
 			mSelfOrganizer.setThreadMaster(mThreadMaster);
+			mSelfOrganizer.setStopTime(mStopMillis);
 			mSelfOrganizer.initializeConformers(mRandomSeed, -1);
 			}
 		else {
@@ -901,7 +933,7 @@ public class ConformerGenerator {
 	 * @return true if successful; false if no fix possible that reduces total collision strain below tolerance
 	 */
 	private boolean tryFixCollisions(BaseConformer baseConformer, TorsionSet torsionSet) {
-		if (mThreadMaster != null && mThreadMaster.threadMustDie())
+		if (mustStop())
 			return false;
 
 		double[][] origCollisionStrainMatrix = torsionSet.getCollisionStrainMatrix();

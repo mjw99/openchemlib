@@ -116,6 +116,8 @@ public class BondQueryFeatureDialogBuilder implements GenericEventListener<Gener
 		mComboBoxRingSize.addItem("is in 5-membered ring");
 		mComboBoxRingSize.addItem("is in 6-membered ring");
 		mComboBoxRingSize.addItem("is in 7-membered ring");
+		mComboBoxRingSize.addItem("smallest ring 8 to 11");
+		mComboBoxRingSize.addItem("smallest ring >= 12");
 		mDialog.add(mComboBoxRingSize, 1,13,3,13);
 
 		mCBMatchFormalOrder = mDialog.createCheckBox("Match formal bond order");
@@ -186,19 +188,19 @@ public class BondQueryFeatureDialogBuilder implements GenericEventListener<Gener
 					  || mMol.isDelocalizedBond(mBond)) ?
 						6 : mMol.getBondOrder(mBond);
 
-		if ((queryFeatures & Molecule.cBondQFSingle) != 0 || bondOrder == 1)
+		if ((queryFeatures & Molecule.cBondTypeSingle) != 0 || bondOrder == 1)
 			mCBSingle.setSelected(true);
-		if ((queryFeatures & Molecule.cBondQFDouble) != 0 || bondOrder == 2)
+		if ((queryFeatures & Molecule.cBondTypeDouble) != 0 || bondOrder == 2)
 			mCBDouble.setSelected(true);
-		if ((queryFeatures & Molecule.cBondQFTriple) != 0 || bondOrder == 3)
+		if ((queryFeatures & Molecule.cBondTypeTriple) != 0 || bondOrder == 3)
 			mCBTriple.setSelected(true);
-		if ((queryFeatures & Molecule.cBondQFQuadruple) != 0 || bondOrder == 4)
+		if ((queryFeatures & Molecule.cBondTypeQuadruple) != 0 || bondOrder == 4)
 			mCBQuadruple.setSelected(true);
-		if ((queryFeatures & Molecule.cBondQFQuintuple) != 0 || bondOrder == 5)
+		if ((queryFeatures & Molecule.cBondTypeQuintuple) != 0 || bondOrder == 5)
 			mCBQuintuple.setSelected(true);
-		if ((queryFeatures & Molecule.cBondQFDelocalized) != 0 || bondOrder == 6)
+		if ((queryFeatures & Molecule.cBondTypeDelocalized) != 0 || bondOrder == 6)
 			mCBDelocalized.setSelected(true);
-		if ((queryFeatures & Molecule.cBondQFMetalLigand) != 0 || bondOrder == 0)
+		if ((queryFeatures & Molecule.cBondTypeMetalLigand) != 0 || bondOrder == 0)
 			mCBMetalLigand.setSelected(true);
 		if ((queryFeatures & Molecule.cBondQFMatchFormalOrder) != 0)
 			mCBMatchFormalOrder.setSelected(true);
@@ -223,7 +225,7 @@ public class BondQueryFeatureDialogBuilder implements GenericEventListener<Gener
 			mComboBoxRing.setSelectedIndex(0);
 
 		int ringSize = (queryFeatures & Molecule.cBondQFRingSize) >> Molecule.cBondQFRingSizeShift;
-		mComboBoxRingSize.setSelectedIndex((ringSize == 0) ? 0 : ringSize-2);
+		mComboBoxRingSize.setSelectedIndex((ringSize == 0) ? 0 : (ringSize <= 2) ? ringSize+5 : ringSize-2);
 
         if ((queryFeatures & Molecule.cBondQFBridge) != 0) {
             mCBIsBridge.setSelected(true);
@@ -291,49 +293,23 @@ public class BondQueryFeatureDialogBuilder implements GenericEventListener<Gener
             queryFeatures |= (minAtoms << Molecule.cBondQFBridgeMinShift);
             queryFeatures |= (atomSpan << Molecule.cBondQFBridgeSpanShift);
             queryFeatures &= ~Molecule.cBondQFBondTypes;
+			mMol.setBondType(bond, Molecule.cBondTypeSingle);
             }
         else {
-        	// priority in order of bond orders
-            int bondOrder = -1;
-            if (mCBSingle.isSelected()) {
-                mMol.setBondType(bond, Molecule.cBondTypeSingle);
-				bondOrder = 1;
-                }
-            else if (mCBDelocalized.isSelected() && !mMol.isDelocalizedBond(bond)) {
-	            mMol.setBondType(bond, Molecule.cBondTypeDelocalized);
-	            bondOrder = 4;
-	            }
-            else if (mCBDouble.isSelected()) {
-                mMol.setBondType(bond, Molecule.cBondTypeDouble);
-				bondOrder = 2;
-                }
-            else if (mCBTriple.isSelected()) {
-                mMol.setBondType(bond, Molecule.cBondTypeTriple);
-				bondOrder = 3;
-                }
- 			else if (mCBMetalLigand.isSelected()) {
-				mMol.setBondType(bond, Molecule.cBondTypeMetalLigand);
-				bondOrder = 0;
-				}
-
-            if (mCBSingle.isSelected() && bondOrder != 1)
-    			queryFeatures |= Molecule.cBondQFSingle;
-    		if (mCBDouble.isSelected() && bondOrder != 2)
-    			queryFeatures |= Molecule.cBondQFDouble;
-    		if (mCBTriple.isSelected() && bondOrder != 3)
-    			queryFeatures |= Molecule.cBondQFTriple;
-	        if (mCBQuadruple.isSelected() && bondOrder != 4)
-		        queryFeatures |= Molecule.cBondQFQuadruple;
-	        if (mCBQuintuple.isSelected() && bondOrder != 5)
-		        queryFeatures |= Molecule.cBondQFQuintuple;
-    		if (mCBDelocalized.isSelected() && !mMol.isDelocalizedBond(bond) && bondOrder != 4)
-    			queryFeatures |= Molecule.cBondQFDelocalized;
-			if (mCBMetalLigand.isSelected() && bondOrder != 0)
-				queryFeatures |= Molecule.cBondQFMetalLigand;
-    		if (mCBMatchFormalOrder.isSelected())
-    			queryFeatures |= Molecule.cBondQFMatchFormalOrder;
-	        if (mCBMatchStereo.isSelected())
-		        queryFeatures |= Molecule.cBondQFMatchStereo;
+			if (mCBSingle.isSelected())
+				queryFeatures |= Molecule.cBondTypeSingle;
+			if (mCBDouble.isSelected())
+				queryFeatures |= Molecule.cBondTypeDouble;
+			if (mCBTriple.isSelected())
+				queryFeatures |= Molecule.cBondTypeTriple;
+			if (mCBQuadruple.isSelected())
+				queryFeatures |= Molecule.cBondTypeQuadruple;
+			if (mCBQuintuple.isSelected())
+				queryFeatures |= Molecule.cBondTypeQuintuple;
+			if (mCBDelocalized.isSelected())
+				queryFeatures |= Molecule.cBondTypeDelocalized;
+			if (mCBMetalLigand.isSelected())
+				queryFeatures |= Molecule.cBondTypeMetalLigand;
 
 			if (mComboBoxRing.getSelectedIndex() != 0) {
 				if (mComboBoxRing.getSelectedIndex() == 1) {
@@ -356,14 +332,18 @@ public class BondQueryFeatureDialogBuilder implements GenericEventListener<Gener
 
 			if (mComboBoxRingSize.getSelectedIndex() != 0) {
 				int ringSize = mComboBoxRingSize.getSelectedIndex() + 2;
+				if (ringSize > 7)	// ringsize 8-11 is encoded as 1; ringsize >12 is encoded as 2
+					ringSize -= 7;
 				int implicitSize = mMol.getBondRingSize(bond);
-				if (ringSize != implicitSize)
+				if (ringSize <= 2 || ringSize != implicitSize) {	// options 1 and 2 cover spans and cannot be implicit
 					queryFeatures |= (ringSize << Molecule.cBondQFRingSizeShift);
+					}
 				}
             }
 
 		mMol.setBondQueryFeature(bond, Molecule.cBondQFAllFeatures, false);
 		mMol.setBondQueryFeature(bond, queryFeatures, true);
+		mMol.adaptBondTypeToQueryFeatures(bond);
 		}
 
     private boolean isSelectedBond(int bond) {

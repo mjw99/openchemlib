@@ -32,6 +32,7 @@
 package com.actelion.research.calc.combinatorics;
 
 import com.actelion.research.util.ListUtils;
+import com.actelion.research.util.StringFunctions;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -298,21 +299,16 @@ public class CombinationGenerator {
 	 * @return
 	 */
 	public static BigInteger getBinomialCoefficient(int n, int k){
-
 		BigInteger nFac = getFactorial(n);
 		BigInteger kFac = getFactorial(k);
-
 		BigInteger nMinus_k_Fac = getFactorial(n-k);
-
 		BigInteger dev = nMinus_k_Fac.multiply(kFac);
-
 		BigInteger bc = nFac.divide(dev);
-
 		return bc;
 	}
 
 	public static void main(String[] args) {
-		examplePermutations();
+		exampleGetAllOutOf2();
 
 	}
 	public static void examplePermutations() {
@@ -355,11 +351,23 @@ public class CombinationGenerator {
 		}
 	}
 
+	public static void exampleGetAllOutOf() {
 
+		int object = 4;
+		int sampleSize = 3;
+		List<int[]>  liComb = getAllOutOf(object, sampleSize);
+		for(int [] a : liComb) {
+			System.out.println(StringFunctions.toString(a, ","));
+		}
+	}
+	public static void exampleGetAllOutOf2() {
 
-
-
-		
-
-
+		int object = 4;
+		for (int sampleSize = 1; sampleSize < object; sampleSize++) {
+			List<int[]>  liComb = getAllOutOf(object, sampleSize);
+			for(int [] a : liComb) {
+				System.out.println(StringFunctions.toString(a, ","));
+			}
+		}
+	}
 }

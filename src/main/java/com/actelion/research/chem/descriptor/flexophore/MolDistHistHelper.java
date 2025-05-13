@@ -1,5 +1,6 @@
 package com.actelion.research.chem.descriptor.flexophore;
 
+import com.actelion.research.chem.descriptor.flexophore.generator.ConstantsFlexophoreGenerator;
 import com.actelion.research.chem.descriptor.flexophore.generator.SubFlexophoreGenerator;
 import com.actelion.research.util.ArrayUtils;
 import com.actelion.research.util.ByteArray;
@@ -7,6 +8,18 @@ import com.actelion.research.util.ByteArray;
 import java.util.*;
 
 public class MolDistHistHelper {
+
+
+    public static int getNumNodesNotEmpty(MolDistHist mdh){
+
+        if(mdh==null)
+            return 0;
+
+        if(MolDistHistHelper.isEmptyMolDistHist(mdh))
+            return 0;
+
+        return mdh.getNumPPNodes();
+    }
 
     /**
      * Creates a single {@link MolDistHist} object from several MolDistHist. Missing descriptor histograms are added
@@ -64,30 +77,38 @@ public class MolDistHistHelper {
 
         return mdh;
     }
+
+    /**
+     *
+     * @param arr
+     * @return canonical representation of nodes without distance histogram
+     */
     public static MolDistHist assembleNoDistHist (MolDistHist ... arr){
 
-        int nNodesSum = 0;
-        int maxNumNodes = 0;
+        List<PPNode> liPPNode = new ArrayList<>();
         for (MolDistHist mdhFrag : arr) {
             int nNodes = mdhFrag.getNumPPNodes();
-            nNodesSum += nNodes;
-            if(nNodes>maxNumNodes)
-                maxNumNodes=nNodes;
-        }
-        MolDistHist mdh = new MolDistHist(nNodesSum);
-        int [] [] arrMapIndexNew = new int[arr.length][maxNumNodes];
-        int indexNew = 0;
-        for (int i = 0; i < arr.length; i++) {
-            int n = arr[i].getNumPPNodes();
-            for (int j = 0; j < n; j++) {
-                arrMapIndexNew[i][j]=indexNew;
-                indexNew++;
-                mdh.addNode(arr[i].getNode(j));
+            for (int i = 0; i < nNodes; i++) {
+                PPNode node = mdhFrag.getNode(i);
+                if(node.getInteractionTypeCount()>0){
+                    liPPNode.add(node);
+                }
             }
         }
 
+        if(liPPNode.size()==0){
+            return null;
+        }
+
+        Collections.sort(liPPNode);
+        MolDistHist mdh = new MolDistHist(liPPNode.size());
+        for (PPNode ppNode : liPPNode) {
+            mdh.addNode(ppNode);
+        }
+        mdh.realize();
         return mdh;
     }
+
     public static boolean isZero(byte [] b){
         boolean z=true;
         for (byte v : b) {
@@ -226,13 +247,20 @@ public class MolDistHistHelper {
         return eq;
     }
 
-    public static MolDistHist createFromNodes (Collection<PPNode> li){
-        MolDistHist mdh = new MolDistHist(li.size());
-        for (PPNode ppNode : li) {
-            mdh.addNode(ppNode);
+
+    /**
+     *
+     * @param col
+     * @return
+     */
+    public static MolDistHist createFromNodes (Collection<PPNode> col){
+        MolDistHistViz molDistHistViz = new MolDistHistViz(col.size());
+        for (PPNode ppNode : col) {
+            PPNodeViz ppNodeViz = new PPNodeViz(ppNode);
+            molDistHistViz.addNode(ppNodeViz);
         }
-        mdh.realize();
-        return mdh;
+        molDistHistViz.realize();
+        return molDistHistViz.getMolDistHist();
     }
 
     public static MolDistHist [] toArray(List<MolDistHist> li){
@@ -241,6 +269,22 @@ public class MolDistHistHelper {
             a[i]=li.get(i);
         }
         return a;
+    }
+
+    public static void reNormalizeDistHist(MolDistHist mdh, int margin){
+        int n = mdh.getNumPPNodes();
+        for (int i = 0; i < n; i++) {
+            for (int j = i+1; j < n; j++) {
+                byte [] b = mdh.getDistHist(i,j);
+                int c = DistHistHelper.count(b);
+                if(Math.abs(ConstantsFlexophoreGenerator.SUM_VAL_HIST-c) > margin){
+                    byte [] distHistNew = DistHistHelper.normalize(b);
+                    mdh.setDistHist(i,j,distHistNew);
+//                    int c2 = DistHistHelper.count(distHistNew);
+//                    System.out.println(c2);
+                }
+            }
+        }
     }
 
 }

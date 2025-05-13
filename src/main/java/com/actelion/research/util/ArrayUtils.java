@@ -109,6 +109,23 @@ public class ArrayUtils {
 		return res;
 	}
 
+	public final static boolean[] toBoolean(Collection<Integer> list, int size) {
+		boolean[] res = new boolean[size];
+		Iterator iter = list.iterator();
+		while(iter.hasNext()) {
+			Integer i = (Integer) iter.next();
+			res[i] = true;
+		}
+		return res;
+	}
+	public final static boolean[] toBoolean(int [] a, int size) {
+		boolean[] res = new boolean[size];
+		for (int i : a) {
+			res[i] = true;
+		}
+		return res;
+	}
+
 	public final static<T> List<T> toList(T [] arr) {
 		List<T> li = new ArrayList<T>(arr.length);
 
@@ -230,6 +247,28 @@ public class ArrayUtils {
 		int res = array[0];
 		for(int i=1; i<array.length; i++) {
 			res = Math.max(res, array[i]);
+		}
+		return res;
+	}
+	public final static int max(int[] [] array) {
+		if(array.length==0) return 0;
+
+		int r = array.length;
+		int c = array[0].length;
+
+		int res = array[0][0];
+		for(int i=0; i<r; i++) {
+			for(int j=0; j<c; j++) {
+				res = Math.max(res, array[i][j]);
+			}
+		}
+		return res;
+	}
+	public final static int min(int[] array) {
+		if(array.length==0) return 0;
+		int res = array[0];
+		for(int i=1; i<array.length; i++) {
+			res = Math.min(res, array[i]);
 		}
 		return res;
 	}
@@ -408,5 +447,19 @@ public class ArrayUtils {
 		return ov;
 	}
 
-
+	/**
+	 *
+	 * @param s string with single digits '123456789'.
+	 * @return
+	 */
+	public static int [] parseSingleDigitString(String s) {
+		if (s == null)
+			return null;
+		int[] arr = new int[s.length()];
+		for (int i = 0; i < s.length(); i++) {
+			int c = Integer.parseInt(Character.toString(s.charAt(i)));
+			arr[i] = c;
+		}
+		return arr;
+	}
 }

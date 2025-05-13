@@ -75,7 +75,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 	 * @return
 	 */
 	public StereoMolecule getCompactMolecule(String idcode) {
-		return (idcode == null || idcode.length() == 0) ? null : getCompactMolecule(idcode.getBytes(StandardCharsets.UTF_8), null);
+		return (idcode == null || idcode.isEmpty()) ? null : getCompactMolecule(idcode.getBytes(StandardCharsets.UTF_8));
 		}
 
 	/**
@@ -151,7 +151,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 	 * @param idcode null or idcode, which may contain coordinates separated by a space character
 	 */
 	public void parse(StereoMolecule mol, String idcode) {
-		if (idcode == null || idcode.length() == 0) {
+		if (idcode == null || idcode.isEmpty()) {
 			parse(mol, (byte[])null, (byte[])null);
 			return;
 			}
@@ -433,13 +433,15 @@ public class IDCodeParserWithoutCoordinateInvention {
 		mMol.setFragment(decodeBits(1) == 1);
 
 		int[] aromaticSPBond = null;
+		int[] selectedHydrogenBits = null;
 
 		int offset = 0;
 		while (decodeBits(1) == 1) {
 			int dataType = offset + decodeBits(4);
+			int no;
 			switch (dataType) {
 			case 0:	//	datatype 'AtomQFNoMoreNeighbours'
-				int no = decodeBits(abits);
+				no = decodeBits(abits);
 				for (int i=0; i<no; i++) {
 					int atom = decodeBits(abits);
 					mMol.setAtomQueryFeature(atom, Molecule.cAtomQFNoMoreNeighbours, true);
@@ -723,6 +725,16 @@ public class IDCodeParserWithoutCoordinateInvention {
 					mMol.setBondType(bond, bondType);
 					}
 				break;
+			case 38:	//	datatype 'selected hydrogen'
+				no = decodeBits(abits);
+				int connBits = decodeBits(3);
+				selectedHydrogenBits = new int[allAtoms];
+				for (int i=0; i<no; i++) {
+					int atom = decodeBits(abits);
+					int conns = decodeBits(connBits);
+					selectedHydrogenBits[atom] = conns;
+					}
+				break;
 				}
 			}
 
@@ -762,10 +774,13 @@ public class IDCodeParserWithoutCoordinateInvention {
 							from = 0;
 							factor = 8.0;
 							}
-						mMol.setAtomX(atom, mMol.getAtomX(from) + factor * (decodeBits(resolutionBits) - binCount / 2));
-						mMol.setAtomY(atom, mMol.getAtomY(from) + factor * (decodeBits(resolutionBits) - binCount / 2));
+
+						double decodedDX = factor * (decodeBits(resolutionBits) + 1 - (binCount >> 1));
+						double decodedDY = factor * (decodeBits(resolutionBits) + 1 - (binCount >> 1));
+						mMol.setAtomX(atom, mMol.getAtomX(from) + decodedDX);
+						mMol.setAtomY(atom, mMol.getAtomY(from) + decodedDY);
 						if (coordsAre3D)
-							mMol.setAtomZ(atom, mMol.getAtomZ(from) + factor * (decodeBits(resolutionBits) - binCount / 2));
+							mMol.setAtomZ(atom, mMol.getAtomZ(from) + factor * (decodeBits(resolutionBits) + 1 - (binCount >> 1)));
 						}
 
 					if (coordinates[coordsStart] == '#') {    // we have 3D-coordinates that include implicit hydrogen coordinates
@@ -781,10 +796,13 @@ public class IDCodeParserWithoutCoordinateInvention {
 								int hydrogen = mMol.addAtom(1);
 								mMol.addBond(atom, hydrogen, Molecule.cBondTypeSingle);
 
-								mMol.setAtomX(hydrogen, mMol.getAtomX(atom) + (decodeBits(resolutionBits) - binCount / 2));
-								mMol.setAtomY(hydrogen, mMol.getAtomY(atom) + (decodeBits(resolutionBits) - binCount / 2));
+								mMol.setAtomX(hydrogen, mMol.getAtomX(atom) + (decodeBits(resolutionBits) + 1 - (binCount >> 1)));
+								mMol.setAtomY(hydrogen, mMol.getAtomY(atom) + (decodeBits(resolutionBits) + 1 - (binCount >> 1)));
 								if (coordsAre3D)
-									mMol.setAtomZ(hydrogen, mMol.getAtomZ(atom) + (decodeBits(resolutionBits) - binCount / 2));
+									mMol.setAtomZ(hydrogen, mMol.getAtomZ(atom) + (decodeBits(resolutionBits) + 1 - (binCount >> 1)));
+
+								if (selectedHydrogenBits != null && (selectedHydrogenBits[atom] & (1 << i)) != 0)
+									mMol.setAtomSelection(hydrogen, true);
 								}
 							}
 
@@ -854,10 +872,12 @@ public class IDCodeParserWithoutCoordinateInvention {
 
 		boolean coords2DAvailable = (coordinates != null && !coordsAre3D);
 
+		fixMultipleBondTypes();
+
 		// If we have or create 2D-coordinates, then we need to set all double bonds to a cross bond, which
 		// - have distinguishable substituents on both ends, i.e. is a stereo double bond
 		// - are not in a small ring
-		// Here we don't know, whether a double bond without E/Z parity is a stereo bond with unknown
+		// Here we don't know whether a double bond without E/Z parity is a stereo bond with unknown
 		// configuration or not a stereo bond. Therefore, we need to set a flag, that causes the Canonizer
 		// during the next stereo recognition with atom coordinates to assign an unknown configuration rather
 		// than E or Z based on created or given coordinates.
@@ -893,6 +913,59 @@ public class IDCodeParserWithoutCoordinateInvention {
 			}
 		}
 
+	/**
+	 * New convention is that in case of a substructure bond with multiple allowed bond types,
+	 * all allowed bond types are set as query feature and in addition the bond itself has to
+	 * be the lowest bond type of these.
+	 */
+	private void fixMultipleBondTypes() {
+		if (mMol.isFragment()) {
+			for (int bond=0; bond<mMol.getAllBonds(); bond++) {
+				int queryFeatures = mMol.getBondQueryFeatures(bond);
+				if ((queryFeatures & Molecule.cBondQFBondTypes) == 0)
+					continue;
+
+				int bondType = -1;
+				int selectionCount = 0;
+
+				if ((queryFeatures & Molecule.cBondTypeMetalLigand) != 0) {
+					bondType = Molecule.cBondTypeMetalLigand;
+					selectionCount++;
+				}
+				if ((queryFeatures & Molecule.cBondTypeQuintuple) != 0) {
+					bondType = Molecule.cBondTypeQuintuple;
+					selectionCount++;
+				}
+				if ((queryFeatures & Molecule.cBondTypeQuadruple) != 0) {
+					bondType = Molecule.cBondTypeQuadruple;
+					selectionCount++;
+				}
+				if ((queryFeatures & Molecule.cBondTypeTriple) != 0) {
+					bondType = Molecule.cBondTypeTriple;
+					selectionCount++;
+				}
+				if ((queryFeatures & Molecule.cBondTypeDouble) != 0) {
+					bondType = Molecule.cBondTypeDouble;
+					selectionCount++;
+				}
+				if ((queryFeatures & Molecule.cBondTypeDelocalized) != 0) {
+					bondType = Molecule.cBondTypeDelocalized;
+					selectionCount++;
+				}
+				if ((queryFeatures & Molecule.cBondTypeSingle) != 0) {
+					bondType = Molecule.cBondTypeSingle;
+					selectionCount++;
+				}
+
+				if (bondType != -1) {
+					mMol.setBondType(bond, bondType);    // set to the lowest bond order of query options
+					if (selectionCount == 1)
+						mMol.setBondQueryFeature(bond, Molecule.cBondQFBondTypes, false);
+				}
+			}
+		}
+	}
+
 	protected void inventCoordinates(StereoMolecule mol) throws Exception {
 		throw new Exception("Unexpected request to invent coordinates. Check source code logic!");
 		}
@@ -901,7 +974,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 	 * This method parses an id-coordinate string (new format only) and writes the coordinates into a Coordinates array.
 	 * If the id-coordinates contain implicit hydrogen coordinates, then this method does not(!!!) add these hydrogen atoms
 	 * to the Molecule. Thus, for 3D-coordinates with implicit hydrogen coordinates, you need to make sure that all
-	 * of the Molecule's hydrogen atoms are explicit and that the Coordinates array's size covers all hydrogens atoms.
+	 * the Molecule's hydrogen atoms are explicit and that the Coordinates array's size covers all hydrogens atoms.
 	 * For instance, if parsing idcodes and coordinates of a conformer set, you may parse the first conformer with one
 	 * of the getCompactMolecule() or parse() methods.
 	 * This adds all implicit hydrogens as explicit ones to the Molecule and conformer object. All subsequent conformers
@@ -935,10 +1008,10 @@ public class IDCodeParserWithoutCoordinateInvention {
 				from = 0;
 				factor = 8.0;
 				}
-			coords[atom].x = coords[from].x + factor * (decodeBits(resolutionBits) - binCount / 2);
-			coords[atom].y = coords[from].y + factor * (decodeBits(resolutionBits) - binCount / 2);
+			coords[atom].x = coords[from].x + factor * (decodeBits(resolutionBits) - binCount / 2.0);
+			coords[atom].y = coords[from].y + factor * (decodeBits(resolutionBits) - binCount / 2.0);
 			if (coordsAre3D)
-				coords[atom].z = coords[from].z + factor * (decodeBits(resolutionBits) - binCount / 2);
+				coords[atom].z = coords[from].z + factor * (decodeBits(resolutionBits) - binCount / 2.0);
 			}
 
 		double avbl = coordsAre3D ? 1.5 : Molecule.getDefaultAverageBondLength();
@@ -954,10 +1027,10 @@ public class IDCodeParserWithoutCoordinateInvention {
 			for (int atom = 0; atom < atomCount; atom++) {
 				int hCount = mol.getAllConnAtoms(atom) - mol.getConnAtoms(atom);
 				for (int i = 0; i < hCount; i++) {
-					coords[hydrogen].x = coords[atom].x + (decodeBits(resolutionBits) - binCount / 2);
-					coords[hydrogen].y = coords[atom].y + (decodeBits(resolutionBits) - binCount / 2);
+					coords[hydrogen].x = coords[atom].x + (decodeBits(resolutionBits) - binCount / 2.0);
+					coords[hydrogen].y = coords[atom].y + (decodeBits(resolutionBits) - binCount / 2.0);
 					if (coordsAre3D)
-						coords[hydrogen].z = coords[atom].z + (decodeBits(resolutionBits) - binCount / 2);
+						coords[hydrogen].z = coords[atom].z + (decodeBits(resolutionBits) - binCount / 2.0);
 
 					hydrogen++;
 					}
@@ -1072,7 +1145,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 		}
 
 	public int getIDCodeVersion(String idcode) {
-		if (idcode == null || idcode.length() == 0)
+		if (idcode == null || idcode.isEmpty())
 			return -1;
 
 		return getIDCodeVersion(idcode.getBytes(StandardCharsets.UTF_8));
@@ -1090,7 +1163,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 		}
 
 	public int getAtomCount(String idcode) {
-		if (idcode == null || idcode.length() == 0)
+		if (idcode == null || idcode.isEmpty())
 			return 0;
 
 		return getAtomCount(idcode.getBytes(StandardCharsets.UTF_8), 0);
@@ -1120,7 +1193,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 	 * @return int[] with atom and bond count as first and second values
 	 */
 	public int[] getAtomAndBondCounts(String idcode, int[] count) {
-		if (idcode == null || idcode.length() == 0)
+		if (idcode == null || idcode.isEmpty())
 			return null;
 
 		return getAtomAndBondCounts(idcode.getBytes(StandardCharsets.UTF_8), 0, count);
@@ -1192,7 +1265,7 @@ public class IDCodeParserWithoutCoordinateInvention {
 		boolean isNegative = (value >= halfBinCount);
 		if (isNegative)
 			value -= halfBinCount;
-		double steepness = binCount/32;
+		double steepness = binCount/32.0;
 		double doubleValue = steepness * value / (halfBinCount - value);
 		return isNegative ? -doubleValue : doubleValue;
 		}
@@ -1366,9 +1439,10 @@ public class IDCodeParserWithoutCoordinateInvention {
 			int offset = 0;
 			while (decodeBits(1) == 1) {
 				int dataType = offset + decodeBits(4);
+				int no;
 				switch (dataType) {
 					case 0: //  datatype 'AtomQFNoMoreNeighbours'
-						int no = decodeBits(abits);
+						no = decodeBits(abits);
 						System.out.print("noMoreNeighbours:");
 						for (int i = 0; i < no; i++)
 							System.out.print(" " + decodeBits(abits));
@@ -1637,6 +1711,18 @@ public class IDCodeParserWithoutCoordinateInvention {
 						System.out.print("Rare Bond Type:");
 						for (int i=0; i<no; i++)
 							System.out.print(" " + decodeBits(bbits) + ":" + (decodeBits(1) == 0 ? "quadruple" : "quintuple"));
+						System.out.println();
+						break;
+					case 38:	//	datatype 'selected hydrogen'
+						no = decodeBits(abits);
+						int connBits = decodeBits(3);
+						System.out.print("Selected hydrogen:");
+						for (int i=0; i<no; i++) {
+							int atom = decodeBits(abits);
+							int conns = decodeBits(connBits);
+							System.out.print(" " + atom + ":" + conns);
+						}
+						System.out.println();
 						break;
 					}
 				}
@@ -1675,12 +1761,12 @@ public class IDCodeParserWithoutCoordinateInvention {
 							factor = 8.0;
 						}
 						System.out.print(atom + " (");
-						coords[0][atom] = coords[0][from] + factor * (decodeBits(resolutionBits) - binCount / 2);
+						coords[0][atom] = coords[0][from] + factor * (decodeBits(resolutionBits) - binCount / 2.0);
 						System.out.print((int) coords[0][atom] + ",");
-						coords[1][atom] = coords[1][from] + factor * (decodeBits(resolutionBits) - binCount / 2);
+						coords[1][atom] = coords[1][from] + factor * (decodeBits(resolutionBits) - binCount / 2.0);
 						System.out.print((int) coords[1][atom]);
 						if (coordsAre3D) {
-							coords[2][atom] = coords[2][from] + factor * (decodeBits(resolutionBits) - binCount / 2);
+							coords[2][atom] = coords[2][from] + factor * (decodeBits(resolutionBits) - binCount / 2.0);
 							System.out.print("," + (int) coords[0][atom]);
 						}
 						System.out.print("), ");
@@ -1719,12 +1805,12 @@ public class IDCodeParserWithoutCoordinateInvention {
 								System.out.print(atom);
 							for (int i = 0; i < hCount[atom]; i++) {
 								System.out.print(" (");
-								coords[0][hydrogen] = coords[0][atom] + (decodeBits(resolutionBits) - binCount / 2);
+								coords[0][hydrogen] = coords[0][atom] + (decodeBits(resolutionBits) - binCount / 2.0);
 								System.out.print((int) coords[0][hydrogen] + ",");
-								coords[1][hydrogen] = coords[1][atom] + (decodeBits(resolutionBits) - binCount / 2);
+								coords[1][hydrogen] = coords[1][atom] + (decodeBits(resolutionBits) - binCount / 2.0);
 								System.out.print((int) coords[1][hydrogen]);
 								if (coordsAre3D) {
-									coords[2][hydrogen] = coords[2][atom] + (decodeBits(resolutionBits) - binCount / 2);
+									coords[2][hydrogen] = coords[2][atom] + (decodeBits(resolutionBits) - binCount / 2.0);
 									System.out.print("," + (int) coords[2][hydrogen]);
 								}
 								System.out.print("), ");

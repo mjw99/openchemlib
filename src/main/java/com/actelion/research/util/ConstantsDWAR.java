@@ -129,6 +129,8 @@ public class ConstantsDWAR {
 	 */
 	public static final String TAG_COOR3D = "idcoordinates3D";
 
+	public static final String TAG_COOR3D_MMFF = "3D-Structure (low-energy random, mmff94s+)";
+
 	/**
 	 * Contains the idcode and the 3d coordinates.
 	 */
@@ -155,6 +157,8 @@ public class ConstantsDWAR {
 	public static final String TAG_NAME = "Name";
 	
 	public static final String TAG_RECORD_NO = "Record No";
+	public static final String TAG_TRANSFORMATION = "Transformation";
+
 
 	@Deprecated // use TAG_CMP_ID instead!
 	public static final String TAG_ACTNO = "Idorsia No";
@@ -165,6 +169,7 @@ public class ConstantsDWAR {
 
 	public static final String ATTR_YES = "Y";
 	public static final String ATTR_NO = "N";
+
 
 
 

@@ -38,6 +38,7 @@ import com.actelion.research.util.datamodel.DoubleArray;
 import java.awt.Point;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.*;
@@ -68,6 +69,14 @@ public class StringFunctions {
 			arrDouble[i]=Double.parseDouble(a[i]);
 		}
 		return arrDouble;
+	}
+	public static int[] parse2Int(String s, String sepRegEx){
+		String [] a = s.split(sepRegEx);
+		int [] vals = new int[a.length];
+		for (int i = 0; i < a.length; i++) {
+			vals[i]=Integer.parseInt(a[i]);
+		}
+		return vals;
 	}
 
 
@@ -346,12 +355,9 @@ public class StringFunctions {
 		String maxo = "";
 		
 		List<String> liPat = getAllSubStrings(li.get(0), minsize);
-		
 		for (int i = 0; i < liPat.size(); i++) {
 			String pat = liPat.get(i);
-			
 			Pattern p = Pattern.compile(pat);
-			
 			boolean match=true;
 			for (int j = 1; j < li.size(); j++) {
 				String line = li.get(j);
@@ -459,46 +465,31 @@ public class StringFunctions {
 	public static String formatToCharactersAndDigits(String str) {
 		
 		String regex = "[0-9a-zA-Z ]";
-		
 		Pattern pa = Pattern.compile(regex);
-    	
     	Matcher ma = pa.matcher(str);
-		
     	StringBuilder sb = new StringBuilder();
-    	
     	int pos = 0;
     	while(ma.find(pos)){
-    		
     		MatchResult mr = ma.toMatchResult();
-    		
     		int start = mr.start();
-    		
     		int end = mr.end();
-    		
     		pos = end;
-    		
     		sb.append(str.substring(start,end));
-    		
     	}
-    	
 		return sb.toString();
 	}
 	
 	public static String format2DefinedLengthTrailing(String s, int length){
 		StringBuilder sb = new StringBuilder(s);
-		
 		while(sb.length() < length)
 			sb.append(' ');
-		
 		return sb.toString();
 	}
 	
 	public static String format2DefinedLengthLeading(String s, int length){
 		StringBuilder sb = new StringBuilder(s);
-		
 		while(sb.length() < length)
 			sb.insert(0, ' ');
-		
 		return sb.toString();
 	}
 	
@@ -534,9 +525,6 @@ public class StringFunctions {
 				cLastLetter = replacement;
 			}
 		}
-		
-		
-		
 		return sb.toString();
 	}
 	
@@ -550,13 +538,10 @@ public class StringFunctions {
 	 */
 	public static String getString(String sLine, String sStart, String sEnd) {
 		String str = "";
-
 		int iStart = sLine.indexOf(sStart) + sStart.length();
 		int iEnd = sLine.indexOf(sEnd);
-
 		if (iStart > -1 && iEnd > -1)
 			str = sLine.substring(iStart, iEnd);
-
 		return str;
 	}
 
@@ -569,12 +554,9 @@ public class StringFunctions {
 	public static String getStringFromRegEx(String str, String regex) {
 
 		Pattern pa = Pattern.compile(regex);
-    	
     	Matcher ma = pa.matcher(str);
-    	
 		int start = -1;
 		int end = -1;
-		
     	if(ma.find()){
     		MatchResult mr = ma.toMatchResult();
     		start = mr.start();
@@ -587,14 +569,10 @@ public class StringFunctions {
 	}
 
 	public static Point getStartEnd(String str, String regex) {
-
 		Pattern pa = Pattern.compile(regex);
-
 		Matcher ma = pa.matcher(str);
-
 		int start = -1;
 		int end = -1;
-
 		if(ma.find()){
 			MatchResult mr = ma.toMatchResult();
 			start = mr.start();
@@ -602,17 +580,29 @@ public class StringFunctions {
 		} else {
 			return null;
 		}
-
 		return new Point(start,end);
+	}
+
+	public static List<String> splitIncludeSEP(String str, String regex) {
+		List<String> li=new ArrayList<>();
+		Pattern pa = Pattern.compile(regex);
+		Matcher ma = pa.matcher(str);
+		int start = 0;
+		int end = -1;
+		while(ma.find()){
+			MatchResult mr = ma.toMatchResult();
+			end = mr.start();
+			String s = str.substring(start, end);
+			start = end;
+			li.add(s);
+		}
+		return li;
 	}
 
 	
 	public static boolean isRegexInString(String str, String regex) {
-
 		Pattern pa = Pattern.compile(regex);
-    	
     	Matcher ma = pa.matcher(str);
-    	
     	if(ma.find()){
     		return true;
     	} else {
@@ -627,20 +617,13 @@ public class StringFunctions {
 	 * @return expression which was matched by regex.
 	 */
 	public static String extract(String str, String regex) {
-
 		String substring = "";
-		
 		Pattern pa = Pattern.compile(regex);
-    	
     	Matcher ma = pa.matcher(str);
-    	
     	if(ma.find()) {
-			
 			MatchResult mr = ma.toMatchResult();
-			
 			substring = mr.group();
     	}
-    	
     	return substring;
 	}
 	
@@ -653,26 +636,16 @@ public class StringFunctions {
 	public static String extractInverse(String str, String regex) {
 
 		String substring = "";
-		
 		Pattern pa = Pattern.compile(regex);
-    	
     	Matcher ma = pa.matcher(str);
-    	
     	if(ma.find()) {
-
 			MatchResult mr = ma.toMatchResult();
-
 			int start = mr.start();
-
 			int end = mr.end();
-
 			String rest1 = str.substring(0, start);
-
 			String rest2 = str.substring(end);
-
 			substring = rest1 + rest2;
 		}
-
     	return substring;
 	}
 
@@ -868,6 +841,26 @@ public class StringFunctions {
 		return li;
 	}
 
+	public static String shuffle(String s) {
+
+		List<Character> characters = new ArrayList<>();
+		for (char c : s.toCharArray()) {
+			characters.add(c);
+		}
+
+		// Shuffle the list
+		Collections.shuffle(characters);
+
+		// Convert the list back to String
+		StringBuilder shuffledString = new StringBuilder();
+		for (char c : characters) {
+			shuffledString.append(c);
+		}
+
+		return shuffledString.toString();
+	}
+
+
 	/**
 	 * https://stackoverflow.com/questions/4385623/bytes-of-a-string-in-java
 	 * sizeof(string) =
@@ -939,6 +932,18 @@ public class StringFunctions {
 			sb.append(v);
 			if(i < arr.length-1){
 				sb.append(ConstantsDWAR.SEP_VALUE);
+			}
+		}
+		return sb.toString();
+	}
+	public static String toStringShort(byte [] arr){
+
+		StringBuilder sb = new  StringBuilder();
+		for (int i = 0; i < arr.length; i++) {
+			int v = arr[i];
+			sb.append(v);
+			if(i < arr.length-1){
+				sb.append(" ");
 			}
 		}
 		return sb.toString();
@@ -1058,18 +1063,12 @@ public class StringFunctions {
 	}
 
 	public static String toString(int [] arr, String seperator){
-
 		StringBuilder sb = new  StringBuilder();
-
 		for (int i = 0; i < arr.length; i++) {
-
 			if(sb.length()>0)
 				sb.append(seperator);
-
 			sb.append(Integer.toString(arr[i]));
-
 		}
-
 		return sb.toString();
 	}
 
@@ -1079,25 +1078,18 @@ public class StringFunctions {
 	 * @return
 	 */
 	public static String toStringTabNL(String [][] arr){
-
 		StringBuilder sb = new  StringBuilder();
-
 		for (int i = 0; i < arr.length; i++) {
-
 			for (int j = 0; j < arr[i].length; j++) {
 				sb.append(arr[i][j]);
-
 				if(j <arr [i].length-1){
 					sb.append("\t");
 				}
 			}
-
 			if(i < arr.length-1){
 				sb.append("\n");
 			}
-
 		}
-
 		return sb.toString();
 	}
 
@@ -1132,29 +1124,22 @@ public class StringFunctions {
 	
 	public static String toStringLong(List<Long> li, String sep) {
 		StringBuilder sb = new StringBuilder();
-		
 		for (int i = 0; i < li.size(); i++) {
 			sb.append(li.get(i));
-			
 			if(i < li.size()-1){
 				sb.append(sep);
 			}
 		}
-		
 		return sb.toString();
 	}
 	public static String toStringInt(List<Integer> li, String sep) {
-
 		StringBuilder sb = new StringBuilder();
-
 		for (int i = 0; i < li.size(); i++) {
 			sb.append(li.get(i));
-
 			if(i < li.size()-1){
 				sb.append(sep);
 			}
 		}
-
 		return sb.toString();
 	}
 	public static String toStringInt(List<Integer> li) {
@@ -1163,13 +1148,10 @@ public class StringFunctions {
 
 	public static String toSortedString(List<String> li) {
 		StringBuilder sb = new StringBuilder();
-		
 		Collections.sort(li);
-		
 		for (String s : li) {
 			sb.append(s);
 		}
-		
 		return sb.toString();
 	}
 
@@ -1405,6 +1387,19 @@ public class StringFunctions {
 	public static boolean isAlphaNumeric(char char1) {
 		return (char1 >= 'a' && char1 <= 'z') || (char1 >= 'A' && char1 <= 'Z') || (char1 >= '0' && char1 <= '9');
 	}
+
+	public static boolean isAlphaNumeric(String s) {
+		boolean a = true;
+		for (int i = 0; i < s.length(); i++) {
+			Character c = s.charAt(i);
+			if(!isAlphaNumeric(c)){
+				a = false;
+				break;
+			}
+		}
+		return a;
+	}
+
 	/**
 	 * 
 	 * @param s
@@ -1443,7 +1438,6 @@ public class StringFunctions {
 		boolean lower=false;
 		
 	    for(char c : s.toCharArray()) {
-	    	
 	       if(Character.isUpperCase(c)) {
 	    	   upper = true;
 	        } else if(Character.isLowerCase(c)) {
@@ -1457,7 +1451,6 @@ public class StringFunctions {
 	    if(upper && lower){
 	    	return true;
 	    }
-	    
 	    return false;
 	}
 	
@@ -1471,7 +1464,6 @@ public class StringFunctions {
 	public static boolean isMissingParenthesis(String name) {
 		
 		int ccOpen=0;
-		
 		int ccClose=0;
 		for (int i = 0; i < name.length(); i++) {
 			if(name.charAt(i) == '(') {
@@ -1485,18 +1477,16 @@ public class StringFunctions {
 			return false;
 		}
 		
-		
 		return true;
 	}
 
-	public static String toStringStackTrace(Exception ex){
+	public static String toStringStackTrace(Throwable ex){
 		StringWriter sw = new StringWriter();
 		PrintWriter pw = new PrintWriter(sw);
 		ex.printStackTrace(pw);
 		return sw.toString();
 
 	}
-
 	public static void main(String[] args) {
 
 		String sLine = "Pos3ition: 8 15 StartName:XXXEn7890dName0";
