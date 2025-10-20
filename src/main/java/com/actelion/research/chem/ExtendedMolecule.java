@@ -51,38 +51,35 @@ import java.util.Arrays;
  * the validity of or update the helper arrays themselves for performance reasons. If you use low
  * level methods, then you need to make sure that the required helper array information is valid by
  * calling ensureHelperArrays().
- * Typically you will never instantiate an ExtendedMolecule, but rather use a StereoMolecule.
+ * Typically, you will never instantiate an ExtendedMolecule, but rather use a StereoMolecule.
  */
 public class ExtendedMolecule extends Molecule implements Serializable {
 	static final long serialVersionUID = 0x2006CAFE;
 
 	/**
-	 * To interpret a stereo center as fisher projection, all non stereo
+	 * To interpret a stereo center as fisher projection, all non-stereo
 	 * bonds must be vertical and all stereo bonds must be horizontal.
 	 * FISCHER_PROJECTION_LIMIT is the allowed tolerance (currently 5.0 degrees).
-	 * In addition in large rings we don't assume Fisher projections,
+	 * In addition, in large rings we don't assume Fisher projections,
 	 * because coordinates, if just in a circle, may have subsequent almost vertical bonds.
 	 */
 	public static final float FISCHER_PROJECTION_LIMIT = (float)Math.PI / 36;
 	public static final float FISCHER_PROJECTION_RING_LIMIT = 24;
-
-	public static final float STEREO_ANGLE_LIMIT = (float)Math.PI / 36;   // 5 degrees
 
 	public static final int cMaxConnAtoms = 16; // ExtendedMolecule is not restricted anymore
 											   // However, this is a suggestion for editors and other classes
 	transient private int mAtoms,mBonds;
 	transient private RingCollection mRingSet;
 
-	transient private int mPi[];
-	transient private int mConnAtoms[];	// non-H neighbour counts
-	transient private int mAllConnAtoms[];	// neighbour counts including explicit hydrogen
-	transient private int mConnAtom[][];
-	transient private int mConnBond[][];
-	transient private int mConnBondOrder[][];
+	transient private int[] mPi;
+	transient private int[] mConnAtoms;	// non-H neighbour counts
+	transient private int[] mAllConnAtoms;	// neighbour counts including explicit hydrogen
+	transient private int[][] mConnAtom;
+	transient private int[][] mConnBond;
+	transient private int[][] mConnBondOrder;
 
 	public ExtendedMolecule() {
 		}
-
 
 	public ExtendedMolecule(int maxAtoms, int maxBonds) {
 		super(maxAtoms, maxBonds);
@@ -613,7 +610,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 
 	/**
-	 * This method returns the non-hydrogen neighbour count of atom.
+	 * This method returns the non-hydrogen neighbour count of atom not counting metal bonds.
 	 * It excludes any hydrogen atoms in contrast to getConnAtoms(), which only
 	 * excludes plain hydrogen (not deuterium, tritium, custom labelled hydrogen, etc.).
 	 * Don't use this method's return value for loops with getConnAtom(),
@@ -639,7 +636,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		int count = 0;
 		if (mIsFragment)
 			for (int i=0; i<mConnAtoms[atom]; i++)
-				if ((mAtomQueryFeatures[mConnAtom[atom][i]] & Molecule.cAtomQFExcludeGroup) != 0)
+				if (isExcludeGroupAtom(mConnAtom[atom][i]))
 					count++;
 		return count;
 		}
@@ -696,7 +693,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		boolean delocalizedBondFound = false;
 		int valence = 0;
 		for (int i=0; i<mAllConnAtoms[atom]; i++) {
-			if (!mIsFragment || (mAtomQueryFeatures[mConnAtom[atom][i]] & cAtomQFExcludeGroup) == 0) {
+			if (!mIsFragment || !isExcludeGroupAtom(mConnAtom[atom][i])) {
 				int order = mConnBondOrder[atom][i];
 				valence += order;
 				if (order > 1)
@@ -739,7 +736,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * The oxygen in R-O(-) has a lowest free valence of 0, the nitrogen in R3N(+)
 	 * has a free valence of 1. If you need the maximum possible free valence,
 	 * use getFreeValence(), which would give 6 for Cl(-) and HCl.<br>
-	 * Of course, the lowest free valce depends on the atomic number. If this molecule
+	 * Of course, the lowest free valence depends on the atomic number. If this molecule
 	 * is a fragment and if an atom list is associated with this atom, then the lowest free
 	 * valence is calculated for all atomic numbers in the list and the highest of them is returned.
 	 * @param atom
@@ -763,15 +760,14 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		int valence = getAtomAbnormalValence(atom);
 		if (valence == -1) {
 			byte[] valenceList = getAllowedValences(mAtomicNo[atom]);
-			int i= 0;
-			while ((occupiedValence > valenceList[i] + correction) && (i<valenceList.length-1))
+			int i=0;
+			while ((i<valenceList.length-1) && (occupiedValence > valenceList[i] + correction))
 				i++;
 			valence = valenceList[i];
 			}
 
 		return valence + correction - occupiedValence;
 		}
-
 
 	/**
 	 * If the explicitly attached neighbors cause an atom valence to exceed
@@ -849,7 +845,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		ensureHelperArrays(cHelperNeighbours);
 
 		int[] graphLevel = new int[mAllAtoms];
-		int graphAtom[] = new int[mAllAtoms];
+		int[] graphAtom = new int[mAllAtoms];
 
 		graphAtom[0] = atom1;
 		graphLevel[atom1] = 1;
@@ -887,7 +883,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		ensureHelperArrays(cHelperNeighbours);
 
 		int[] graphLevel = new int[mAllAtoms];
-		int graphAtom[] = new int[mAllAtoms];
+		int[] graphAtom = new int[mAllAtoms];
 
 		graphAtom[0] = atom1;
 		graphLevel[atom1] = 1;
@@ -945,8 +941,8 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		ensureHelperArrays(cHelperNeighbours);
 
 		int[] graphLevel = new int[mAllAtoms];
-		int graphAtom[] = new int[mAllAtoms];
-		int parentAtom[] = new int[mAllAtoms];
+		int[] graphAtom = new int[mAllAtoms];
+		int[] parentAtom = new int[mAllAtoms];
 
 		graphAtom[0] = atom1;
 		graphLevel[atom1] = 1;
@@ -1155,7 +1151,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		for (int atom=0; atom<mAllAtoms; atom++) {
 			if (fragmentNo[atom] == -1) {
 				fragmentNo[atom] = fragments;
-				int graphAtom[] = new int[mAllAtoms];
+				int[] graphAtom = new int[mAllAtoms];
 				graphAtom[0] = atom;
 				int current = 0;
 				int highest = 0;
@@ -1203,7 +1199,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 			if (fragmentNo[atom] == -1
 			 && (!markedAtomsOnly || isMarkedAtom(atom))) {
 				fragmentNo[atom] = fragments;
-				int graphAtom[] = new int[mAllAtoms];
+				int[] graphAtom = new int[mAllAtoms];
 				graphAtom[0] = atom;
 				int current = 0;
 				int highest = 0;
@@ -1328,7 +1324,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	/**
 	 * Determines all atoms of the substituent attached to coreAtom and starting
 	 * with firstAtom. If isMemberAtom!=null, then all substituent member atoms
-	 * will have the the respective index being flagged upon return. This includes
+	 * will have their corresponding bit set to true upon return. This includes
 	 * firstAtom and excludes coreAtom.
 	 * If substituent!=null, then it will contain the substituent as Molecule.
 	 * At the position of the coreAtom substituent will contain a wildcard atom.
@@ -1365,7 +1361,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 	while (current <= highest) {
 //			int connAtoms = getAllConnAtomsPlusMetalBonds(graphAtom[current]);
 //		    for (int i=0; i<connAtoms; i++) {     the default for graph methods is to neglect dative bonds; TLS 27 May 2020
-// If dative bonds must be considered on a certain context, the we need to introduce a flag e.g. as in getFragmentAtoms()
+// If dative bonds must be considered on a certain context, then we need to introduce a flag e.g. as in getFragmentAtoms()
 			for (int i=0; i<mAllConnAtoms[graphAtom[current]]; i++) {
 				int candidate = mConnAtom[graphAtom[current]][i];
 				if (candidate == coreAtom) {
@@ -1767,6 +1763,11 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		}
 
 
+	/**
+	 * Requires helper arrays state cHelperRings.
+	 * @param atom
+	 * @return whether the atom is a member of an aromatic ring
+	 */
 	public boolean isAromaticAtom(int atom) {
 		return (atom < mAtoms) ? mRingSet.isAromaticAtom(atom) : false;
 		}
@@ -3049,6 +3050,89 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		return count;
 		}
 
+	/**
+	 * Calculates the oxydation state of an atom considering its charge and the electronegativity and
+	 * bond order of the atom's neighbours.
+	 * Requires helper arrays level cHelperNeighbours.
+	 * @param atom
+	 * @return
+	 */
+	public int getOxidationState(int atom) {
+		if (isAtomicNoNobleGas(mAtomicNo[atom]))
+			return 0;
+
+		if (mAtomicNo[atom] == 1)
+			return mConnAtoms[atom] == 0 ? 0 : isAtomicNoElectropositive(mAtomicNo[mConnAtom[atom][0]]) ? -1 : 1;
+
+		int state = mAtomCharge[atom];
+		int hydrogenCount = getAllHydrogens(atom);
+
+		if (mAtomicNo[atom] != 1 && mAtomicNo[atom] != 15) {
+			if (isAtomicNoElectropositive(mAtomicNo[atom]))
+				state += hydrogenCount;
+			else
+				state -= hydrogenCount;
+		}
+
+		if (mConnAtoms[atom] == 0)
+			return state;
+
+		for (int i=0; i<mConnAtoms[atom]; i++) {
+			int connAtom = mConnAtom[atom][i];
+			int bondOrder = isDelocalizedBond(mConnBond[atom][i]) ? 1 : mConnBondOrder[atom][i];
+
+			if (isAtomicNoElectropositive(mAtomicNo[atom])) {
+				if (!isAtomicNoElectropositive(mAtomicNo[connAtom]))
+					state += bondOrder;
+			}
+			else if (isAtomicNoElectropositive(mAtomicNo[connAtom])) {
+				state -= bondOrder;
+			}
+			else if (mAtomicNo[atom] != mAtomicNo[connAtom]) {
+				if (PeriodicTable.getElement(mAtomicNo[atom]).getElectronegativity()
+				  < PeriodicTable.getElement(mAtomicNo[connAtom]).getElectronegativity())
+					state += bondOrder;
+				else
+					state -= bondOrder;
+			}
+		}
+
+		// formal bond orders of delocalized bonds are one. Thus, we need to correct, if an atom in a delocalized
+		// ring is connected via delocalized bonds to two atoms with higher or lower electronegativity.
+		if (isDelocalizedAtom(atom)) {
+			int boronCount = 0;
+			int carbonCount = 0;
+			int heteroCount = 0;
+			for (int i=0; i<mConnAtoms[atom]; i++) {
+				if (isDelocalizedBond(mConnBond[atom][i])) {
+					int connAtomicNo = mAtomicNo[mConnAtom[atom][i]];
+					if (connAtomicNo == 6)
+						carbonCount++;
+					else if (isAtomicNoElectronegative(connAtomicNo))
+						heteroCount++;
+					else
+						boronCount++;
+				}
+			}
+			if (mAtomicNo[atom] == 6) {
+				if (boronCount > 1)
+					state--;
+				else if (heteroCount > 1)
+					state++;
+			}
+			else if (isElectronegative(atom)) {
+				if (boronCount + carbonCount > 1)
+					state--;
+			}
+			else {
+				if (heteroCount + carbonCount>1)
+					state++;
+			}
+		}
+
+		return state;
+	}
+
 	private int getSecondOrderOrthoSubstituentCount(int atom, int otherBondAtom) {
 		int count = 0;
 		for (int i=0; i<mConnAtoms[atom]; i++) {
@@ -3278,7 +3362,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		}
 
 	/**
-	 * Normalizes charge distribution in single- and multifragment molecules.
+	 * Normalizes charge distribution in single- and multi- fragment molecules.
 	 * In a first step polar bonds (both atoms have opposite charge) are neutralized
 	 * by removing both atom charges and increasing the bond order, provided that atom
 	 * valences allow the change.
@@ -3295,7 +3379,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		}
 
 	/**
-	 * Normalizes charge distribution in single- and multifragment molecules.
+	 * Normalizes charge distribution in single- and multi- fragment molecules.
 	 * In a first step polar bonds (both atoms have opposite charge) are neutralized
 	 * by removing both atom charges and increasing the bond order, provided that atom
 	 * valences allow the change.
@@ -3362,7 +3446,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 						int newStereoBond = preferredTHStereoBond(stereoCenter, false);
 						if (mBondAtom[0][newStereoBond] != stereoCenter) {
 							mBondAtom[1][newStereoBond] = mBondAtom[0][newStereoBond];
-							mBondAtom[1][newStereoBond] = stereoCenter;
+							mBondAtom[0][newStereoBond] = stereoCenter;
 							}
 						}
 					}
@@ -3439,7 +3523,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * @return true if atom has a neighbour with a negative charge
 	 */
 	private boolean hasNegativeNeighbour(int atom) {
-		for (int i = 0; i< mConnAtoms[atom]; i++)
+		for (int i=0; i<mConnAtoms[atom]; i++)
 			if (mAtomCharge[mConnAtom[atom][i]] < 0)
 				return true;
 		return false;
@@ -3451,7 +3535,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * @return true if atom has a neighbour with a positive charge
 	 */
 	private boolean hasPositiveNeighbour(int atom) {
-		for (int i = 0; i< mConnAtoms[atom]; i++)
+		for (int i=0; i<mConnAtoms[atom]; i++)
 			if (mAtomCharge[mConnAtom[atom][i]] > 0)
 				return true;
 		return false;
@@ -4033,8 +4117,8 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 			}
 
 		for (int ringNo=0; ringNo<mRingSet.getSize(); ringNo++) {
-			int ringAtom[] = mRingSet.getRingAtoms(ringNo);
-			int ringBond[] = mRingSet.getRingBonds(ringNo);
+			int[] ringAtom = mRingSet.getRingAtoms(ringNo);
+			int[] ringBond = mRingSet.getRingBonds(ringNo);
 			int ringAtoms = ringAtom.length;
 			for (int i=0; i<ringAtoms; i++) {
 				mAtomFlags[ringAtom[i]] |= cAtomFlagSmallRing;
@@ -4160,7 +4244,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 				mAtomQueryFeatures[atom] &= ~cAtomQFPiElectrons;
 				}
 
-			if ((mAtomQueryFeatures[atom] & cAtomQFExcludeGroup) != 0
+			if (isExcludeGroupAtom(atom)
 			 && mAtomMapNo[atom] != 0)
 				removeMappingNo(mAtomMapNo[atom]);
 			}
@@ -4178,7 +4262,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		ensureHelperArrays(cHelperRings);
 
 		for (int bond=0; bond<mBonds; bond++) {
-			int bondTypeQFCount = Integer.bitCount(mBondQueryFeatures[bond] & (Molecule.cBondQFBondTypes | Molecule.cBondQFRareBondTypes));
+			int bondTypeQFCount = Integer.bitCount(mBondQueryFeatures[bond] & Molecule.cBondQFAllBondTypes);
 
 			if (isDelocalizedBond(bond) & (mBondQueryFeatures[bond] & cBondTypeDelocalized) != 0) {
 				mBondQueryFeatures[bond] &= ~cBondTypeDelocalized;

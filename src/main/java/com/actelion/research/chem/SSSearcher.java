@@ -218,7 +218,7 @@ public class SSSearcher {
 
 		mIsExcludeAtom = new boolean[mFragment.getAtoms()];
 		for (int atom=0; atom<mFragment.getAtoms(); atom++) {
-			mIsExcludeAtom[atom] = ((mFragment.getAtomQueryFeatures(atom) & Molecule.cAtomQFExcludeGroup) != 0);
+			mIsExcludeAtom[atom] = mFragment.isExcludeGroupAtom(atom);
 			if (mIsExcludeAtom[atom])
 				mFragmentExcludeAtoms++;
 			}
@@ -359,7 +359,10 @@ System.out.println();
 	 */
 	private int tryAddCandidate(int current, int highest, int i, boolean[] fragmentAtomUsed, boolean[] fragmentBondUsed, int excludeGroupNo) {
 		int candidate = mFragment.getConnAtom(mFragmentGraphAtom[current], i);
-		if ((!mIsExcludeAtom[candidate] || mExcludeGroupNo[candidate] == excludeGroupNo)	// always allow non-exclude atoms, because it may be a ring closure from exclude group to main fragment
+		// exclude plain hydrogen (candidate >= mIsExcludeAtom.length)
+		// always allow non-exclude atoms, because it may be a ring closure from exclude group to main fragment
+		if (candidate < mIsExcludeAtom.length
+		 && (!mIsExcludeAtom[candidate] || mExcludeGroupNo[candidate] == excludeGroupNo)
 		 && candidate != mFragmentGraphParentAtom[current]) {
 			int candidateBond = mFragment.getConnBond(mFragmentGraphAtom[current], i);
 
@@ -816,16 +819,21 @@ System.out.println();
 		 && mFragment.getAtomRadical(fragmentAtom) != mMolecule.getAtomRadical(moleculeAtom))
 			return false;
 
-		int smallestRingSize = (int)((mFragment.getAtomQueryFeatures(fragmentAtom) & Molecule.cAtomQFSmallRingSize) >> Molecule.cAtomQFSmallRingSizeShift);
+		long oxidationState = fragmentQF & Molecule.cAtomQFOxidationState;
+		if (oxidationState != 0L
+		 && mMolecule.getOxidationState(moleculeAtom) != (int)(oxidationState >> Molecule.cAtomQFOxidationStateShift)
+				- Molecule.cAtomQFOxidationStateOffset)
+			return false;
+
+		long smallestRingSize = fragmentQF & Molecule.cAtomQFSmallRingSize;
 		if (smallestRingSize != 0) {
+			smallestRingSize >>= Molecule.cAtomQFSmallRingSizeShift;
 			if (!mMolecule.isFragment()) {
-				if (mMolecule.getAtomRingSize(moleculeAtom) != smallestRingSize)
-					return false;
+				return mMolecule.getAtomRingSize(moleculeAtom) == (int)(smallestRingSize);
 				}
 			else {
 				int targetRingSize = (int)((mMolecule.getAtomQueryFeatures(moleculeAtom) & Molecule.cAtomQFSmallRingSize) >> Molecule.cAtomQFSmallRingSizeShift);
-				if (smallestRingSize != targetRingSize)
-					return false;
+				return (int)smallestRingSize == targetRingSize;
 				}
 			}
 
@@ -1194,10 +1202,8 @@ System.out.println();
 			}
 			else {
 				// skip plain hydrogens
-				if (mMolecule.getConnAtom(mMatchTable[mFragmentGraphParentAtom[current]], index[current]) >= mMolecule.getAtoms()) {
-					index[current]++;
+				if (mMolecule.getConnAtom(mMatchTable[mFragmentGraphParentAtom[current]], index[current]) >= mMolecule.getAtoms())
 					continue;
-					}
 
 				int candidate = mMolecule.getConnAtom(mMatchTable[mFragmentGraphParentAtom[current]], index[current]);
 				if (!mFragmentGraphIsRingClosure[current]) {	// current graph position is not an anchor
@@ -1297,7 +1303,7 @@ System.out.println();
 		if ((mFragment.getBondQueryFeatures(fragmentBond) & Molecule.cBondQFMatchFormalOrder) != 0) {
 			int molBondType = mMolecule.getBondTypeSimple(moleculeBond);
 			int frgBondType = mFragment.getBondTypeSimple(fragmentBond);
-			int frgBondTypes = mFragment.getBondQueryFeatures(fragmentBond) & Molecule.cBondQFBondTypes;
+			int frgBondTypes = mFragment.getBondQueryFeatures(fragmentBond) & Molecule.cBondQFAllBondTypes;
 			if (molBondType != frgBondType
 			 && !(molBondType == Molecule.cBondTypeSingle && (frgBondTypes & Molecule.cBondTypeSingle) != 0)
 			 && !(molBondType == Molecule.cBondTypeDouble && (frgBondTypes & Molecule.cBondTypeDouble) != 0)
@@ -1308,8 +1314,8 @@ System.out.println();
 			 && !(molBondType == Molecule.cBondTypeDelocalized && (frgBondTypes & Molecule.cBondTypeDelocalized) != 0))
 				return false;
 
-			molDefaults &= ~Molecule.cBondQFBondTypes;
-			frgDefaults &= ~Molecule.cBondQFBondTypes;
+			molDefaults &= ~Molecule.cBondQFAllBondTypes;
+			frgDefaults &= ~Molecule.cBondQFAllBondTypes;
 			}
 
 		if ((molDefaults & ~frgDefaults) != 0)

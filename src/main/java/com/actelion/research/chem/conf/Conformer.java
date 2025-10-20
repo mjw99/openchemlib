@@ -35,6 +35,7 @@
 package com.actelion.research.chem.conf;
 
 import com.actelion.research.chem.Coordinates;
+import com.actelion.research.chem.Molecule;
 import com.actelion.research.chem.StereoMolecule;
 
 import java.util.Arrays;
@@ -58,7 +59,7 @@ public class Conformer implements Comparable<Conformer> {
 		mMol = mol;
 		mCoordinates = new Coordinates[mol.getAllAtoms()];
 		for (int atom = 0; atom < mol.getAllAtoms(); atom++)
-			mCoordinates[atom] = new Coordinates(mol.getCoordinates(atom));
+			mCoordinates[atom] = new Coordinates(mol.getAtomCoordinates(atom));
 
 		mEnergy = Double.NaN;
 	}
@@ -281,7 +282,7 @@ public class Conformer implements Comparable<Conformer> {
 	 */
 	public void copyFrom(StereoMolecule mol) {
 		for (int atom = 0; atom < mol.getAllAtoms(); atom++)
-			mCoordinates[atom].set(mol.getCoordinates(atom));
+			mCoordinates[atom].set(mol.getAtomCoordinates(atom));
 	}
 
 	/**
@@ -290,8 +291,9 @@ public class Conformer implements Comparable<Conformer> {
 	 * @param mol molecule identical to the original molecule passed in the Constructor
 	 */
 	public void copyTo(StereoMolecule mol) {
+		mol.invalidateHelperArrays(Molecule.cHelperBitsStereo);
 		for (int atom = 0; atom < mol.getAllAtoms(); atom++)
-			mol.getCoordinates(atom).set(mCoordinates[atom]);
+			mol.getAtomCoordinates(atom).set(mCoordinates[atom]);
 	}
 
 	/**
@@ -329,8 +331,9 @@ public class Conformer implements Comparable<Conformer> {
 	public StereoMolecule toMolecule(StereoMolecule mol) {
 		if (mol == null)
 			mol = mMol.getCompactCopy();
+		mol.invalidateHelperArrays(Molecule.cHelperBitsStereo);
 		for (int atom = 0; atom < mol.getAllAtoms(); atom++)
-			mol.getCoordinates(atom).set(mCoordinates[atom]);
+			mol.getAtomCoordinates(atom).set(mCoordinates[atom]);
 		if (mName != null)
 			mol.setName(mName);
 		return mol;

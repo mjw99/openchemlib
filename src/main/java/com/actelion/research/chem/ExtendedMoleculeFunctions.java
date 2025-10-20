@@ -70,7 +70,10 @@ import com.actelion.research.calc.statistics.StatisticsOverview;
 import com.actelion.research.calc.statistics.median.MedianStatisticFunctions;
 import com.actelion.research.chem.descriptor.DescriptorEncoder;
 import com.actelion.research.chem.descriptor.DescriptorHandler;
+import com.actelion.research.chem.mcs.ListWithIntVec;
 import com.actelion.research.util.BurtleHasher;
+import com.actelion.research.util.Formatter;
+import com.actelion.research.util.datamodel.IntegerDouble;
 
 import java.util.*;
 
@@ -248,14 +251,16 @@ public class ExtendedMoleculeFunctions {
 		return bnds;
 	}
 	public static int getNumNonHydrogenAtoms(ExtendedMolecule mol) {
+		return getNumNonHydrogenAtoms(mol, 1000);
+	}
+	public static int getNumNonHydrogenAtoms(ExtendedMolecule mol, int atNosNot2Consider) {
 		int non = 0;
 		for (int i = 0; i < mol.getAtoms(); i++) {
 			int atomicNo = mol.getAtomicNo(i);
-			if(atomicNo!=1) {
-				non++;
-			}
+			if((atomicNo==1) || (atomicNo>=atNosNot2Consider))
+				continue;
+			non++;
 		}
-
 		return non;
 	}
 	public static int getNumCarbonAtoms(ExtendedMolecule mol) {
@@ -456,6 +461,12 @@ public class ExtendedMoleculeFunctions {
 		int bndtype = mol.getBondParity(bndno);
 		return bndtype;
 	}
+	public static boolean isPseudoParity(ExtendedMolecule mol, int atm1,int atm2) {
+		int bndno = getBondNo(mol, atm1,atm2);
+		if(bndno==-1)
+			return false;
+		return mol.isBondParityPseudo(bndno);
+	}
 
 	public static boolean deleteBond(ExtendedMolecule mol, int atm1,int atm2) {
 		int bndno = getBondNo(mol, atm1,atm2);
@@ -551,7 +562,7 @@ public class ExtendedMoleculeFunctions {
 		}
 		ExtendedMolecule frag = frags[indexBiggestFrag];
 		for (int i = 0; i < frag.getAllAtoms(); i++) {
-			if(liAtomicNo.contains(new Integer(frag.getAtomicNo(i)))) {
+			if(liAtomicNo.contains(Integer.valueOf(frag.getAtomicNo(i)))) {
 				bOk=false;
 				break;
 			}
@@ -685,13 +696,13 @@ public class ExtendedMoleculeFunctions {
 		List<Integer> liExamine = new ArrayList<Integer>();
 		List<Integer> liSphere = new ArrayList<Integer>();
 		List<Integer> liVisited = new ArrayList<Integer>();
-		liExamine.add(new Integer(at1));
-		liSphere.add(new Integer(1));
+		liExamine.add(Integer.valueOf(at1));
+		liSphere.add(Integer.valueOf(1));
 		boolean bFound = false;
 		while(!liExamine.isEmpty()) {
 			dist = ((Integer)liSphere.remove(0)).intValue();
 			int indAtCenter = ((Integer)liExamine.remove(0)).intValue();
-			liVisited.add(new Integer(indAtCenter));
+			liVisited.add(Integer.valueOf(indAtCenter));
 			int numJNeighbors = mol.getAllConnAtoms(indAtCenter);
 			for (int i = 0; i < numJNeighbors; i++) {
 				int indAtNeighb = mol.getConnAtom(indAtCenter, i);
@@ -699,9 +710,9 @@ public class ExtendedMoleculeFunctions {
 					bFound = true;
 					break;
 				}
-				if(!liVisited.contains(new Integer(indAtNeighb))) {
-					liExamine.add(new Integer(indAtNeighb));
-					liSphere.add(new Integer(dist + 1));
+				if(!liVisited.contains(Integer.valueOf(indAtNeighb))) {
+					liExamine.add(Integer.valueOf(indAtNeighb));
+					liSphere.add(Integer.valueOf(dist + 1));
 				}
 			}
 			if(bFound)
@@ -714,6 +725,17 @@ public class ExtendedMoleculeFunctions {
 
 	public final static int [][] getTopologicalDistanceMatrix(StereoMolecule mol) {
 		return getNumberOfBondsBetweenAtoms(mol, mol.getBonds(), null);
+	}
+
+	public static int getMaximumTopologicalDistance(int [][] topoDistance){
+		int max=0;
+		for (int i = 0; i < topoDistance.length; i++) {
+			for (int j = i+1; j < topoDistance.length; j++) {
+				if(topoDistance[i][j]>max)
+					max=topoDistance[i][j];
+			}
+		}
+		return max;
 	}
 
 	/**
@@ -1389,6 +1411,23 @@ public class ExtendedMoleculeFunctions {
 		return molReduced;
 	}
 
+	/**
+	 *
+	 * @param mol
+	 * @param bond
+	 * @param minAtomsDistance minimum number bonds between the atoms.
+	 * @param maxSpanAtoms minAtomsDistance + maxSpanAtoms is the maximum number bonds between the atoms.
+	 */
+	public static void setAtomBridge(ExtendedMolecule mol, int bond, int minAtomsDistance, int maxSpanAtoms){
+		int queryFeatures = 0;
+		queryFeatures |= (minAtomsDistance << Molecule.cBondQFBridgeMinShift);
+		queryFeatures |= (maxSpanAtoms << Molecule.cBondQFBridgeSpanShift);
+		queryFeatures &= ~Molecule.cBondQFAllBondTypes;
+		mol.setBondType(bond, Molecule.cBondTypeSingle);
+		mol.setBondQueryFeature(bond, Molecule.cBondQFAllFeatures, false);
+		mol.setBondQueryFeature(bond, queryFeatures, true);
+		mol.adaptBondTypeToQueryFeatures(bond);
+	}
 
 	public static void setColorMCS2Molecule(StereoMolecule mol, StereoMolecule molMCS){
 		for (int i = 0; i < mol.getAtoms(); i++) {
@@ -1577,5 +1616,124 @@ public class ExtendedMoleculeFunctions {
 			throw new RuntimeException("");
 		}
 		return arrRGroupsAtomicNo[r-1];
+	}
+
+	/**
+	 * Topological centaer atoms are the atoms with the lowest squared sum of topological distances to all atoms.
+	 * @param
+	 * @return
+	 */
+	public final static List<Integer> getTopologicalCenter(int [][] arrTopoDist) {
+		List<Integer> liTopoCenterAtoms = new ArrayList<>();
+		List<IntegerDouble> li = new ArrayList<>();
+		for (int i = 0; i < arrTopoDist.length; i++) {
+			double sum=0;
+			for (int j = 0; j < arrTopoDist.length; j++) {
+				sum += arrTopoDist[i][j]*arrTopoDist[i][j];
+			}
+			li.add(new IntegerDouble(i,sum));
+		}
+		Collections.sort(li, IntegerDouble.getComparatorDouble());
+		liTopoCenterAtoms.add(li.get(0).getInt());
+		for (int i = 1; i < li.size(); i++) {
+			if(li.get(i).getDouble()==li.get(0).getDouble()){
+				liTopoCenterAtoms.add(li.get(i).getInt());
+			}
+		}
+		return liTopoCenterAtoms;
+	}
+
+	public final static List<Integer> getTopologicalCenter(int [][] arrTopoDist, ListWithIntVec ilIndexAtoms) {
+		List<Integer> liTopoCenterAtoms = new ArrayList<Integer>();
+
+		List<IntegerDouble> li = new ArrayList<IntegerDouble>();
+
+		for (int i = 0; i < ilIndexAtoms.size(); i++) {
+
+			int indexAt1 = ilIndexAtoms.get(i);
+
+			double sum=0;
+			for (int j = 0; j < ilIndexAtoms.size(); j++) {
+
+				int indexAt2 = ilIndexAtoms.get(j);
+
+				sum += arrTopoDist[indexAt1][indexAt2]*arrTopoDist[indexAt1][indexAt2];
+			}
+
+			li.add(new IntegerDouble(indexAt1,sum));
+		}
+
+		Collections.sort(li, IntegerDouble.getComparatorDouble());
+
+		liTopoCenterAtoms.add(li.get(0).getInt());
+
+		for (int i = 1; i < li.size(); i++) {
+			if(li.get(i).getDouble()==li.get(0).getDouble()){
+				liTopoCenterAtoms.add(li.get(i).getInt());
+			}
+		}
+
+		return liTopoCenterAtoms;
+	}
+
+	/**
+	 * Gets the points with the maximum sum of squared topological distances to all atoms.
+
+	 * @param arrTopoDist
+	 * @return
+	 */
+	public final static List<Integer> getPeriphericPoints(int [][] arrTopoDist) {
+		List<Integer> liPeripheric = new ArrayList<>();
+		List<IntegerDouble> li = new ArrayList<>();
+		for (int i = 0; i < arrTopoDist.length; i++) {
+			double sum=0;
+			for (int j = 0; j < arrTopoDist.length; j++) {
+				sum += arrTopoDist[i][j]*arrTopoDist[i][j];
+			}
+			li.add(new IntegerDouble(i,sum));
+		}
+		Collections.sort(li, IntegerDouble.getComparatorDouble());
+		Collections.reverse(li);
+		liPeripheric.add(li.get(0).getInt());
+		for (int i = 1; i < li.size(); i++) {
+			if(li.get(i).getDouble()==li.get(0).getDouble()){
+				liPeripheric.add(li.get(i).getInt());
+			}
+		}
+		return liPeripheric;
+	}
+
+	/**
+	 * Distance is the sum of squares for every atom index.
+	 * Sorted in ascending order.
+	 * @param arrTopoDist
+	 * @return
+	 */
+	public final static List<IntegerDouble> getAllIndicesSortedByDistance(int [][] arrTopoDist) {
+		List<IntegerDouble> li = new ArrayList<>();
+		for (int i = 0; i < arrTopoDist.length; i++) {
+			double sum=0;
+			for (int j = 0; j < arrTopoDist.length; j++) {
+				sum += arrTopoDist[i][j]*arrTopoDist[i][j];
+			}
+			li.add(new IntegerDouble(i,sum));
+		}
+		Collections.sort(li, IntegerDouble.getComparatorDouble());
+		return li;
+	}
+
+	public final static String toStringCoordinates(StereoMolecule m){
+
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < m.getAllAtoms(); i++) {
+			if(i>0)
+				sb.append("\n");
+			sb.append(Formatter.format2(m.getAtomX(i)));
+			sb.append(", ");
+			sb.append(Formatter.format2(m.getAtomY(i)));
+			sb.append(", ");
+			sb.append(Formatter.format2(m.getAtomZ(i)));
+		}
+		return sb.toString();
 	}
 }

@@ -453,7 +453,7 @@ public class IsomericSmilesCreator {
 				int rank = mAtomRank[atom];
 
 				// prefer non-exclude group atoms
-				if ((mMol.getAtomQueryFeatures(atom) & Molecule.cAtomQFExcludeGroup) != 0)
+				if (mMol.isExcludeGroupAtom(atom))
 					rank += 0x40000000;
 
 				// prefer lower neighbour count except zero neighbours
@@ -810,7 +810,7 @@ public class IsomericSmilesCreator {
 		if (mEZHalfParity[bond] != 0)
 			builder.append(mEZHalfParity[bond] == 1 ? '/' : '\\');
 		if (mMode == MODE_CREATE_SMARTS) {
-			int bondQFTypes = mMol.getBondQueryFeatures(bond) & (Molecule.cBondQFBondTypes | Molecule.cBondQFRareBondTypes);
+			int bondQFTypes = mMol.getBondQueryFeatures(bond) & Molecule.cBondQFAllBondTypes;
 			if (bondQFTypes != 0) {
 				if ((bondQFTypes & Molecule.cBondTypeSingle) != 0 && mEZHalfParity[bond] == 0) {
 					builder.append('-');

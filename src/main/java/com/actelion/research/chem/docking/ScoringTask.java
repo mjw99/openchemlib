@@ -1,19 +1,17 @@
 package com.actelion.research.chem.docking;
 
+import com.actelion.research.chem.Coordinates;
+import com.actelion.research.chem.StereoMolecule;
+import com.actelion.research.chem.conf.Conformer;
+import com.actelion.research.chem.docking.scoring.idoscore.InteractionTerm;
+import com.actelion.research.chem.interactions.SplineFunction;
+import com.actelion.research.chem.interactions.statistics.InteractionDistanceStatistics;
+import com.actelion.research.chem.io.pdb.calc.MoleculeGrid;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-
-import com.actelion.research.chem.Coordinates;
-import com.actelion.research.chem.Molecule3D;
-import com.actelion.research.chem.StereoMolecule;
-import com.actelion.research.chem.conf.Conformer;
-import com.actelion.research.chem.docking.scoring.idoscore.InteractionTerm;
-import com.actelion.research.chem.interactionstatistics.InteractionDistanceStatistics;
-import com.actelion.research.chem.interactionstatistics.SplineFunction;
-import com.actelion.research.chem.io.pdb.converter.MoleculeGrid;
-import com.actelion.research.chem.potentialenergy.PotentialEnergyTerm;
 
 
 public class ScoringTask {
@@ -31,7 +29,7 @@ public class ScoringTask {
 		List<InteractionTerm> terms = new ArrayList<InteractionTerm>();
 		MoleculeGrid molGrid = new MoleculeGrid(receptor);
 		for(int l=0;l<ligand.getAtoms();l++) 
-			receptorAtoms.addAll(molGrid.getNeighbours(ligand.getCoordinates(l), InteractionDistanceStatistics.CUTOFF_RADIUS));
+			receptorAtoms.addAll(molGrid.getNeighbours(ligand.getAtomCoordinates(l), InteractionDistanceStatistics.CUTOFF_RADIUS));
 		
 		for(int p : receptorAtoms) {
 			for(int l=0;l<ligand.getAtoms();l++) {
@@ -49,19 +47,15 @@ public class ScoringTask {
 			score += term.getFGValue(gradient);
 			}
 		}
-		
 		return score;
-		
-		
 	}
+
 	/**
 	 * calculate interaction of probe atom with receptor
 	 * @param receptor
 	 * @param probeAtomType
 	 * @param c
 	 * @param receptorAtomTypes
-	 * @param ligandAtomTypes
-	 * @param grid
 	 * @return
 	 */
 	public static double calcScore(StereoMolecule receptor, int probeAtomType, Coordinates c, int[] receptorAtomTypes) {
@@ -71,16 +65,10 @@ public class ScoringTask {
 		receptorAtoms.addAll(grid.getNeighbours(c, InteractionDistanceStatistics.CUTOFF_RADIUS));
 		for(int p : receptorAtoms) {
 			SplineFunction f = InteractionDistanceStatistics.getInstance().getFunction(receptorAtomTypes[p], probeAtomType);
-			double dist = c.distance(receptor.getCoordinates(p));
+			double dist = c.distance(receptor.getAtomCoordinates(p));
 			score+=f.getFGValue(dist)[0];
 		}
-		
-	
-		
-		return score;
-		
-		
-	}
-	
 
+		return score;
+	}
 };

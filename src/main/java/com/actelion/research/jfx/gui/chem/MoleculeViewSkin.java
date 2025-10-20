@@ -236,21 +236,24 @@ public class MoleculeViewSkin //extends SkinBase<MoleculeView,MoleculeViewBehavi
     {
         double d = getSkinnable().sizeContent() ? Math.min(w, h) / AbstractDepictor.cOptAvBondLen * 2 : 0;
 
-        AbstractDepictor depictor = getSkinnable().createDepictor(getValue());
-        if (overruleForeground != null) {
-            java.awt.Color fg = new java.awt.Color((float)overruleForeground.getRed(), (float)overruleForeground.getGreen(), (float)overruleForeground.getBlue());
-            java.awt.Color bg = (overruleBackground == null) ? null :
-                    new java.awt.Color((float)overruleBackground.getRed(), (float)overruleBackground.getGreen(), (float)overruleBackground.getBlue());
-            depictor.setOverruleColor(fg, bg);
+        StereoMolecule mol = getValue();
+        if (mol != null) {
+            AbstractDepictor depictor = getSkinnable().createDepictor(mol);
+            if (overruleForeground != null) {
+                java.awt.Color fg = new java.awt.Color((float)overruleForeground.getRed(), (float)overruleForeground.getGreen(), (float)overruleForeground.getBlue());
+                java.awt.Color bg = (overruleBackground == null) ? null :
+                        new java.awt.Color((float)overruleBackground.getRed(), (float)overruleBackground.getGreen(), (float)overruleBackground.getBlue());
+                depictor.setOverruleColor(fg.getRGB(), bg == null ? 0 : bg.getRGB());
+            }
+            else {
+                java.awt.Color bg = new java.awt.Color((float)backgroundColor.getRed(), (float)backgroundColor.getGreen(), (float)backgroundColor.getBlue());
+                java.awt.Color fg = (ColorHelper.perceivedBrightness(bg)>0.5) ? java.awt.Color.BLACK : java.awt.Color.WHITE;
+                depictor.setOverruleColor(fg.getRGB(), bg.getRGB());
+            }
+            GenericDrawContext context = new FXDrawContext(ctx);
+            depictor.validateView(context, new GenericRectangle(0, 0, (float) w, (float) h), AbstractDepictor.cModeInflateToMaxAVBL + (int) (d));
+            depictor.paint(context);
         }
-        else {
-            java.awt.Color bg = new java.awt.Color((float)backgroundColor.getRed(), (float)backgroundColor.getGreen(), (float)backgroundColor.getBlue());
-            java.awt.Color fg = (ColorHelper.perceivedBrightness(bg)>0.5) ? java.awt.Color.BLACK : java.awt.Color.WHITE;
-            depictor.setForegroundColor(fg, bg);
-        }
-        GenericDrawContext context = new FXDrawContext(ctx);
-	    depictor.validateView(context, new GenericRectangle(0, 0, (float) w, (float) h), AbstractDepictor.cModeInflateToMaxAVBL + (int) (d));
-        depictor.paint(context);
     }
 
 
@@ -447,7 +450,7 @@ public class MoleculeViewSkin //extends SkinBase<MoleculeView,MoleculeViewBehavi
                 glassPane.getChildren().add(dragCanvas);
             }
             dragDepictor = new GenericDepictor(mol);
-            dragDepictor.validateView(new FXDrawContext(canvas.getGraphicsContext2D()), new GenericRectangle(0, 0, DEFAULT_IMAGE_WIDTH, DEFAULT_IMAGE_HEIGHT), JFXCanvasDepictor.cModeInflateToMaxAVBL);
+            dragDepictor.validateView(new FXDrawContext(canvas.getGraphicsContext2D()), new GenericRectangle(0, 0, DEFAULT_IMAGE_WIDTH, DEFAULT_IMAGE_HEIGHT), AbstractDepictor.cModeInflateToMaxAVBL);
             dragCanvas.setOpacity(0.7);
             dragCanvas.toFront();
             dragCanvas.setMouseTransparent(true);

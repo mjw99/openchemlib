@@ -42,7 +42,7 @@ import com.actelion.research.chem.reaction.IReactionMapper;
 import com.actelion.research.chem.reaction.Reaction;
 import com.actelion.research.chem.reaction.ReactionArrow;
 import com.actelion.research.chem.reaction.ReactionEncoder;
-import com.actelion.research.chem.reaction.mapping.SimilarityGraphBasedReactionMapper;
+import com.actelion.research.chem.reaction.mapping.ChemicalRuleEnhancedReactionMapper;
 import com.actelion.research.gui.FileHelper;
 import com.actelion.research.gui.LookAndFeelHelper;
 import com.actelion.research.gui.clipboard.IClipboardHandler;
@@ -94,7 +94,11 @@ public class GenericEditorArea implements GenericEventListener {
 	private static final String ITEM_PASTE_WITH_NAME = ITEM_PASTE_STRUCTURE + " or Name";
 	private static final String ITEM_LOAD_REACTION = "Open Reaction File...";
 	private static final String ITEM_ADD_AUTO_MAPPING = "Auto-Map Reaction";
-	private static final String ITEM_REMOVE_MAPPING = "Remove Manual Atom Mapping";
+	private static final String ITEM_REMOVE_ALL_MAPPING = "Remove Entire Atom Mapping";
+	private static final String ITEM_REMOVE_AUTO_MAPPING = "Remove Auto-Mapping (green)";
+	private static final String ITEM_REMOVE_EXPLICIT_MAPPING = "Remove Explicit Mapping (red)";
+	private static final String ITEM_MAKE_AUTO_MAPPING_EXPLICIT = "Make Auto-Mapping Explicit";
+	private static final String ITEM_KEEP_AUTO_MAPPED = "Automatically Complete Mapping";
 	private static final String ITEM_FLIP_HORIZONTALLY = "Flip Horizontally";
 	private static final String ITEM_FLIP_VERTICALLY = "Flip Vertically";
 	private static final String ITEM_FLIP_ROTATE180 = "Rotate 180°";
@@ -150,6 +154,7 @@ public class GenericEditorArea implements GenericEventListener {
 	private static IReactionMapper sMapper;
 	private static String[][] sReactionQueryTemplates;
 	private final int mMaxAVBL;
+	private static boolean sKeepAutoMapped = true;
 	private int mMode, mChainAtoms, mCurrentTool, mCustomAtomicNo, mCustomAtomMass, mCustomAtomValence, mCustomAtomRadical,
 			mCurrentHiliteAtom, mCurrentHiliteBond, mPendingRequest, mEventsScheduled, mFirstAtomKey,
 			mCurrentCursor, mReactantCount, mUpdateMode, mDisplayMode, mAtom1, mAtom2, mAllowedPseudoAtoms;
@@ -636,8 +641,18 @@ public class GenericEditorArea implements GenericEventListener {
 		} else if (command.equals(ITEM_ADD_AUTO_MAPPING)) {
 			autoMapReaction();
 			updateAndFireEvent(Math.max(mUpdateMode, UPDATE_REDRAW));
-		} else if (command.equals(ITEM_REMOVE_MAPPING)) {
-			removeManualMapping();
+		} else if (command.equals(ITEM_REMOVE_ALL_MAPPING)) {
+			removeMapping(true,true);
+		} else if (command.equals(ITEM_REMOVE_EXPLICIT_MAPPING)) {
+			removeMapping(false,true);
+		} else if (command.equals(ITEM_REMOVE_AUTO_MAPPING)) {
+			removeMapping(true,false);
+		} else if (command.equals(ITEM_MAKE_AUTO_MAPPING_EXPLICIT)) {
+			makeAutoMappingExplicit();
+		} else if (command.equals(ITEM_KEEP_AUTO_MAPPED)) {
+			sKeepAutoMapped = !sKeepAutoMapped;
+			if (sKeepAutoMapped)
+				autoMapReaction();
 		} else if (command.equals(ITEM_FLIP_HORIZONTALLY)) {
 			flip(true);
 		} else if (command.equals(ITEM_FLIP_VERTICALLY)) {
@@ -668,10 +683,10 @@ public class GenericEditorArea implements GenericEventListener {
 		}
 	}
 
-	private void removeManualMapping() {
+	private void removeMapping(boolean autoMapping, boolean explicitMapping) {
 		boolean changed = false;
 		for (int atom = 0; atom<mMol.getAtoms(); atom++) {
-			if (mMol.getAtomMapNo(atom) != 0 && !mMol.isAutoMappedAtom(atom)) {
+			if (mMol.getAtomMapNo(atom) != 0 && ((explicitMapping && !mMol.isAutoMappedAtom(atom)) || (autoMapping && mMol.isAutoMappedAtom(atom)))) {
 				if (!changed) {
 					storeState();
 					changed = true;
@@ -682,7 +697,26 @@ public class GenericEditorArea implements GenericEventListener {
 		}
 
 		if (changed) {
-			autoMapReaction();
+			if (!autoMapping)
+				autoMapReaction();
+			updateAndFireEvent(Math.max(mUpdateMode, UPDATE_REDRAW));
+		}
+	}
+
+	private void makeAutoMappingExplicit() {
+		boolean changed = false;
+		for (int atom = 0; atom<mMol.getAtoms(); atom++) {
+			if (mMol.getAtomMapNo(atom) != 0 && mMol.isAutoMappedAtom(atom)) {
+				if (!changed) {
+					storeState();
+					changed = true;
+				}
+
+				mMol.setAtomMapNo(atom, mMol.getAtomMapNo(atom), false);
+			}
+		}
+
+		if (changed) {
 			updateAndFireEvent(Math.max(mUpdateMode, UPDATE_REDRAW));
 		}
 	}
@@ -919,7 +953,7 @@ public class GenericEditorArea implements GenericEventListener {
 			try {
 				Reaction reaction = null;
 
-				if (FileHelper.getFileType(rxnFile.getName()) == FileHelper.cFileTypeRXN) {
+				if (FileHelper.getFileType(rxnFile) == FileHelper.cFileTypeRXN) {
 					reaction = new RXNFileParser().getReaction(rxnFile);
 				} else {
 					RDFileParser rdfParser = new RDFileParser(rxnFile);
@@ -1237,6 +1271,9 @@ public class GenericEditorArea implements GenericEventListener {
 	}
 
 	private void eventHappened(GenericKeyEvent e) {
+		if (mMouseIsDown)
+			return;
+
 		if (e.getWhat() == GenericKeyEvent.KEY_PRESSED) {
 			if (e.getKey() == GenericKeyEvent.KEY_SHIFT) {
 				mShiftIsDown = true;
@@ -1262,21 +1299,12 @@ public class GenericEditorArea implements GenericEventListener {
 					paste();
 				}
 			} else if (e.getKey() == GenericKeyEvent.KEY_DELETE) {
-				storeState();
-				if (mCurrentTool == GenericEditorToolbar.cToolMapper) {
-					boolean found = false;
-					for (int atom = 0; atom<mMol.getAllAtoms(); atom++) {
-						if (mMol.getAtomMapNo(atom) != 0) {
-							mMol.setAtomMapNo(atom, 0, false);
-							found = true;
+				if (mCurrentTool != GenericEditorToolbar.cToolMapper) {
+					storeState();
+					if (!deleteHilited()) {
+						if (mMol.deleteSelectedAtoms()) {
+							updateAndFireEvent(UPDATE_REDRAW);
 						}
-					}
-					if (found) {
-						updateAndFireEvent(UPDATE_REDRAW);
-					}
-				} else if (!deleteHilited()) {
-					if (mMol.deleteSelectedAtoms()) {
-						updateAndFireEvent(UPDATE_REDRAW);
 					}
 				}
 			} else if (e.getKey() == GenericKeyEvent.KEY_HELP || (mCurrentHiliteAtom == -1 && e.getKey() == '?')) {
@@ -1471,7 +1499,11 @@ public class GenericEditorArea implements GenericEventListener {
 				popup.addSeparator();
 
 			popup.addItem(ITEM_ADD_AUTO_MAPPING, null, true);
-			popup.addItem(ITEM_REMOVE_MAPPING, null, true);
+			popup.addItem(ITEM_REMOVE_ALL_MAPPING, null, true);
+			popup.addItem(ITEM_REMOVE_EXPLICIT_MAPPING, null, true);
+			popup.addItem(ITEM_REMOVE_AUTO_MAPPING, null, true);
+			popup.addItem(ITEM_MAKE_AUTO_MAPPING_EXPLICIT, null, true);
+			popup.addRadioButtonItem(ITEM_KEEP_AUTO_MAPPED, null, 0, sKeepAutoMapped);
 			}
 
 		if (mCurrentTool == GenericEditorToolbar.cToolZoom) {
@@ -1928,8 +1960,7 @@ public class GenericEditorArea implements GenericEventListener {
 				mAtom1 = mMol.findAtom(mX1, mY1);
 				if (mAtom1 != -1
 				 && mAtom1 < mMol.getAtoms()
-				 && (!mMol.isFragment()
-				  || (mMol.getAtomQueryFeatures(mAtom1) & Molecule.cAtomQFExcludeGroup) == 0)) {
+				 && (!mMol.isFragment() || !mMol.isExcludeGroupAtom(mAtom1))) {
 					mX1 = mMol.getAtomX(mAtom1);
 					mY1 = mMol.getAtomY(mAtom1);
 					mPendingRequest = cRequestMapAtoms;
@@ -2053,7 +2084,7 @@ public class GenericEditorArea implements GenericEventListener {
 				// exclude group atoms cannot be mapped
 				if (atom2 != -1
 				 && mMol.isFragment()
-				 && (mMol.getAtomQueryFeatures(atom2) & Molecule.cAtomQFExcludeGroup) != 0)
+				 && mMol.isExcludeGroupAtom(atom2))
 					atom2 = -1;
 
 //				System.out.printf("Map Request Atom %d => %d (%d)\n", mAtom1, mAtom2, atom2);
@@ -2062,23 +2093,28 @@ public class GenericEditorArea implements GenericEventListener {
 					storeState();
 					if (mapNoAtom1 != 0) {
 						mapNoChanged = true;
+						boolean wasAutoMapped = false;
 						for (int atom = 0; atom<mMol.getAtoms(); atom++) {
 							if (mMol.getAtomMapNo(atom) == mapNoAtom1) {
+								wasAutoMapped |= mMol.isAutoMappedAtom(atom);
 								mMol.setAtomMapNo(atom, 0, false);
 							}
 						}
 
-						autoMapReaction();
+						if (sKeepAutoMapped && !wasAutoMapped)
+							autoMapReaction();
 					}
 				} else {
 					storeState();
 					mapNoChanged = true;
+					boolean wasAutoMapped = false;
 
 					// If we only clicked on a mapped atom, then reset the map number
 					if (mAtom1 == atom2) {
 						int mapNo = mMol.getAtomMapNo(mAtom1);
 						for (int atom = 0; atom<mMol.getAtoms(); atom++) {
 							if (mMol.getAtomMapNo(atom) == mapNo) {
+								wasAutoMapped |= mMol.isAutoMappedAtom(atom);
 								mMol.setAtomMapNo(atom, 0, false);
 							}
 						}
@@ -2102,7 +2138,8 @@ public class GenericEditorArea implements GenericEventListener {
 						mMol.setAtomMapNo(atom2, freeMapNo, false);
 					}
 
-					autoMapReaction();
+					if (sKeepAutoMapped && !wasAutoMapped)
+						autoMapReaction();
 				}
 
 				if (mapNoChanged)
@@ -2123,7 +2160,8 @@ public class GenericEditorArea implements GenericEventListener {
 		analyzeFragmentMembership();
 
 		// We take the current fragments into a reaction, which we map.
-		new SimilarityGraphBasedReactionMapper().map(getReaction());
+//		new SimilarityGraphBasedReactionMapper().map(getReaction());
+		new ChemicalRuleEnhancedReactionMapper().map(getReaction());
 
 		// Copy new mapping numbers from current fragments into the display molecule,
 		// but mark all those atom as auto-mapped that originally were unmapped or auto-mapped.
@@ -2500,10 +2538,10 @@ public class GenericEditorArea implements GenericEventListener {
 		mY2 = ((atom == -1) ? mY1 : mMol.getAtomY(atom)) + avbl * (float)Math.cos(newAngle);
 	}
 
-	private boolean areAtomsMappingCompatible(int atom1, int atom2){
+	private boolean areAtomsMappingCompatible(int atom1, int atom2) {
 		if (mMol.isFragment()) {
-			if ((mMol.getAtomQueryFeatures(atom1) & Molecule.cAtomQFExcludeGroup) != 0
-					|| (mMol.getAtomQueryFeatures(atom1) & Molecule.cAtomQFExcludeGroup) != 0)
+			if (mMol.isExcludeGroupAtom(atom1)
+			 || mMol.isExcludeGroupAtom(atom2))
 				return false;
 
 			int[] atomList1 = mMol.getAtomList(atom1);

@@ -176,11 +176,13 @@ public class ConstantsDWAR {
 	public static final String [] TAG_NAMES = {TAG_NAME, TAG_ACTNO, TAG_RECORD_NO};
 
 	public static final String ODE_EXTENSION = ".ode";
+	public static final String ODT_EXTENSION = ".odt";
 
 	// DataWarrior file
 	public static final String DWAR_EXTENSION = ".dwar";
+	public static final String DWARE_EXTENSION = ".dware";
 
-	public static final String REGEX_FILE_EXTENSION = "(.*\\"+ODE_EXTENSION+")|(.*\\"+DWAR_EXTENSION+")";
+	public static final String REGEX_FILE_EXTENSION = "(.*\\"+ODE_EXTENSION+")|(.*\\"+DWAR_EXTENSION+")|(.*\\"+DWARE_EXTENSION+")";
 
 	// DataWarrior query file
 	public static final String DWAQ_EXTENSION = ".dwaq";

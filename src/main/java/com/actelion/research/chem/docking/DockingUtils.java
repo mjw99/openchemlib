@@ -9,11 +9,9 @@ import com.actelion.research.chem.AtomFunctionAnalyzer;
 import com.actelion.research.chem.Canonizer;
 import com.actelion.research.chem.Coordinates;
 import com.actelion.research.chem.Molecule;
-import com.actelion.research.chem.Molecule3D;
 import com.actelion.research.chem.StereoMolecule;
-import com.actelion.research.chem.conf.AtomAssembler;
+import com.actelion.research.chem.conf.HydrogenAssembler;
 import com.actelion.research.chem.conf.Conformer;
-import com.actelion.research.chem.phesa.AtomicGaussian;
 import com.actelion.research.chem.phesa.PheSAAlignment;
 
 public class DockingUtils {
@@ -36,7 +34,7 @@ public class DockingUtils {
 		int counter = 0;
 		Coordinates com = new Coordinates();
 		for(int a=0;a<conf.getAtoms();a++) {
-			Coordinates coords = conf.getCoordinates(a);
+			Coordinates coords = conf.getAtomCoordinates(a);
 			com.add(coords);
 			counter++;
 		}
@@ -146,7 +144,7 @@ public class DockingUtils {
 	
 	public static void addImplicitHydrogens(StereoMolecule mol) {
 
-		 new AtomAssembler(mol).addImplicitHydrogens();
+		 new HydrogenAssembler(mol).addImplicitHydrogens();
 
 
 		mol.ensureHelperArrays(Molecule.cHelperNeighbours);

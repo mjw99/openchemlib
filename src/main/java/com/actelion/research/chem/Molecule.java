@@ -125,7 +125,7 @@ public class Molecule implements Serializable {
 	protected static final int cAtomFlagsValence	= 0x78000000;
 	private static final int cAtomFlagsValenceShift = 27;
 
-	public static final int cAtomQFNoOfBits			= 46;
+	public static final int cAtomQFNoOfBits			= 51;
 	public static final int cAtomQFAromStateBits	= 2;
 	public static final int cAtomQFAromStateShift	= 1;
 	public static final int cAtomQFRingStateBits	= 4;
@@ -148,8 +148,11 @@ public class Molecule implements Serializable {
 	public static final int cAtomQFENeighbourShift	= 39;
 	public static final int cAtomQFStereoStateBits	= 2;
 	public static final int cAtomQFStereoStateShift = 44;
+	public static final int cAtomQFOxidationStateBits = 4;
+	public static final int cAtomQFOxidationStateShift = 47;
+	public static final int cAtomQFOxidationStateOffset = 7;
 	public static final long cAtomQFSimpleFeatures	= 0x00007F800E3FC7FEL;
-	public static final long cAtomQFNarrowing		= 0x00007FFF0FFFFFFEL;
+	public static final long cAtomQFNarrowing		= 0x0007FFFF0FFFFFFEL;
 	public static final long cAtomQFAny				= 0x00000001;
 	public static final long cAtomQFAromState		= 0x0000400000000006L;
 	public static final long cAtomQFAromatic		= 0x00000002;
@@ -206,6 +209,7 @@ public class Molecule implements Serializable {
 	public static final long cAtomQFIsStereo        = 0x0000100000000000L;
 	public static final long cAtomQFIsNotStereo     = 0x0000200000000000L;
 	public static final long cAtomQFHeteroAromatic  = 0x0000400000000000L;
+	public static final long cAtomQFOxidationState = 0x0007800000000000L;	// 0:any 1-15: 7+oxidationState (range -6 to 8)
 
 	public static final int cBondTypeSingle			= 0x00000001;	// first 5 bond types must not be changed,
 	public static final int cBondTypeDouble			= 0x00000002;	// because they are part of the idcode
@@ -279,6 +283,7 @@ public class Molecule implements Serializable {
 	public static final int cBondQFNarrowing		= 0x00600180;
 	public static final int cBondQFBondTypes		= 0x0000001F;   // original 5 bond types for idcode
 	public static final int cBondQFRareBondTypes    = 0x00000060;   // using OR logic for all 7 bond types
+	public static final int cBondQFAllBondTypes		= cBondQFBondTypes | cBondQFRareBondTypes;   // all 7 bond types
 	public static final int cBondQFRingState		= 0x00000180;
 	public static final int cBondQFNotRing			= 0x00000080;
 	public static final int cBondQFRing				= 0x00000100;
@@ -741,6 +746,7 @@ public class Molecule implements Serializable {
 
 	/**
 	 * High level function for constructing a molecule.
+	 * If a bond between the two atoms exists already, then its order is changed accordingly.
 	 * @param atom1
 	 * @param atom2
 	 * @param type
@@ -756,9 +762,21 @@ public class Molecule implements Serializable {
 				if (mBondType[bnd] < type)
 					mBondType[bnd] = type;
 				return bnd;
-				}
 			}
+		}
 
+		return addBondNoChecks(atom1, atom2, type);
+	}
+
+
+	/**
+	 * Low level function for adding a bond. There is no checking, whether the bond exists.
+	 * @param atom1
+	 * @param atom2
+	 * @param type
+	 * @return new bond index
+	 */
+	public int addBondNoChecks(int atom1, int atom2, int type) {
 		if (mAllBonds >= mMaxBonds)
 			setMaxBonds(mMaxBonds*2);
 
@@ -1218,13 +1236,13 @@ public class Molecule implements Serializable {
 		int esrGroupCountAND = renumberESRGroups(cESRTypeAnd);
 		int esrGroupCountOR = renumberESRGroups(cESRTypeOr);
 		for (int atom=atom1; atom<atom2; atom++)
-			if (includeExcludeGroups || (mol.getAtomQueryFeatures(atom) & cAtomQFExcludeGroup) == 0)
+			if (includeExcludeGroups || !mol.isExcludeGroupAtom(atom))
 				atomMap[atom] = mol.copyAtom(this, atom, esrGroupCountAND, esrGroupCountOR);
 
 		for (int bond=bond1; bond<bond2; bond++)
 			if (includeExcludeGroups
-			 || ((mol.getAtomQueryFeatures(mol.getBondAtom(0, bond)) & cAtomQFExcludeGroup) == 0
-			  && (mol.getAtomQueryFeatures(mol.getBondAtom(1, bond)) & cAtomQFExcludeGroup) == 0))
+			 || (!mol.isExcludeGroupAtom(mol.getBondAtom(0, bond))
+			  && !mol.isExcludeGroupAtom(mol.getBondAtom(1, bond))))
 				mol.copyBond(this, bond, esrGroupCountAND, esrGroupCountOR, atomMap, false);
 
 		mIsRacemate = (mIsRacemate && mol.mIsRacemate);
@@ -2129,7 +2147,7 @@ public class Molecule implements Serializable {
 		}
 
 	/**
-	 * @return the entire atom coordinate array
+	 * @return atom coordinates of the given atom
 	 */
 	public Coordinates getAtomCoordinates(int atom) {
 		return mCoordinates[atom];
@@ -2137,10 +2155,16 @@ public class Molecule implements Serializable {
 
 
 	/**
-	 * @return the entire atom coordinate array
+	 * @return the entire atom coordinate array, which usually is larger than the number of atoms!!!
 	 */
 	public Coordinates[] getAtomCoordinates() {
 		return mCoordinates;
+	}
+
+
+	@Deprecated
+	public Coordinates getCoordinates(int atom) {
+		return mCoordinates[atom];
 	}
 
 
@@ -2306,11 +2330,6 @@ public class Molecule implements Serializable {
 	public int getAtomRadical(int atom) {
 		return mAtomFlags[atom] & cAtomRadicalState;
 		}
-
-
-	public Coordinates getCoordinates(int atom) {
-		return mCoordinates[atom];
-	}
 
 
 	public Coordinates getCenterOfGravity() {
@@ -2656,7 +2675,7 @@ public class Molecule implements Serializable {
 	 * @return formal bond order 0 (dative bonds), 1, 2, 3, 4, or 5
 	 */
 	public int getBondOrder(int bond) {
-		if (mIsFragment && (mBondQueryFeatures[bond] & cBondQFBondTypes) != 0) {
+		if (mIsFragment && (mBondQueryFeatures[bond] & cBondQFAllBondTypes) != 0) {
 			if ((mBondQueryFeatures[bond] & (cBondTypeSingle | cBondTypeDelocalized)) != 0)
 				return 1;
 			if ((mBondQueryFeatures[bond] & cBondTypeDouble) != 0)
@@ -3044,6 +3063,14 @@ public class Molecule implements Serializable {
 	public boolean isMarkedAtom(int atom) {
 		return (mAtomFlags[atom] & cAtomFlagMarked) != 0;
 		}
+
+
+	/**
+	 * Convenience method to check, whether the atom is marked to be part of an exclude group.
+	 */
+	public boolean isExcludeGroupAtom(int atom) {
+		return (mAtomQueryFeatures[atom] & cAtomQFExcludeGroup) != 0;
+	}
 
 
 	/**
@@ -3543,7 +3570,7 @@ public class Molecule implements Serializable {
 			mBondType[bond] = bondType;	// set to the lowest bond order of query options
 
 		if (selectionCount < 2)
-			mBondQueryFeatures[bond] &= ~(cBondQFBondTypes + cBondQFRareBondTypes);
+			mBondQueryFeatures[bond] &= ~cBondQFAllBondTypes;
 	}
 
 
@@ -3819,7 +3846,7 @@ public class Molecule implements Serializable {
 		boolean isChanged = false;
 
 		for (int atom=0; atom<mAllAtoms; atom++) {
-			if ((mAtomQueryFeatures[atom] & cAtomQFExcludeGroup) != 0) {
+			if (isExcludeGroupAtom(atom)) {
 				markAtomForDeletion(atom);
 				isChanged = true;
 				}
@@ -4262,11 +4289,7 @@ public class Molecule implements Serializable {
 		if (isAtomicNoElectronegative(atomicNo))
 			return false;
 
-		if (atomicNo == 2	// He
-		 || atomicNo == 10	// Ne
-		 || atomicNo == 18	// Ar
-		 || atomicNo == 36	// Kr
-		 || atomicNo == 54)	// Xe
+		if (isAtomicNoNobleGas(atomicNo))
 			return false;
 
 		if (atomicNo > 103)	// amino acids etc.
@@ -4275,6 +4298,14 @@ public class Molecule implements Serializable {
 		return true;
 		}
 
+	public static boolean isAtomicNoNobleGas(int atomicNo) {
+		return atomicNo == 2	// He
+			|| atomicNo == 10	// Ne
+			|| atomicNo == 18	// Ar
+			|| atomicNo == 36	// Kr
+			|| atomicNo == 54	// Xe
+			|| atomicNo == 86;	// Rn
+	}
 
 	/**
 	 * @param atom

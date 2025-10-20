@@ -198,7 +198,7 @@ public class Reactor {
 		int index = 0;
 		for (int i=0; i<mol.getConnAtoms(atom); i++) {
 			int connAtom = mol.getConnAtom(atom, i);
-			if ((mol.getAtomQueryFeatures(connAtom) & Molecule.cAtomQFExcludeGroup) == 0)
+			if (!mol.isExcludeGroupAtom(connAtom))
 				atomicNo[index++] = mol.getAtomicNo(connAtom);
 			}
 		Arrays.sort(atomicNo);
@@ -210,7 +210,7 @@ public class Reactor {
 		int index = 0;
 		for (int i=0; i<mol.getConnAtoms(atom); i++) {
 			int connAtom = mol.getConnAtom(atom, i);
-			if ((mol.getAtomQueryFeatures(connAtom) & Molecule.cAtomQFExcludeGroup) == 0)
+			if (!mol.isExcludeGroupAtom(connAtom))
 				mapNo[index++] = mol.getAtomMapNo(connAtom);
 			}
 		Arrays.sort(mapNo);
@@ -226,7 +226,7 @@ public class Reactor {
 		for (int i=0; i<rxn.getMolecules(); i++) {
 			StereoMolecule mol = mGenericReaction.getMolecule(i);
 			for (int atom=0; atom<mol.getAtoms(); atom++) {
-				if ((mol.getAtomQueryFeatures(atom) & Molecule.cAtomQFExcludeGroup) != 0)
+				if (mol.isExcludeGroupAtom(atom))
 					mol.setAtomMapNo(atom, 0, false);
 				else if (mMaxGenericMapNo < mol.getAtomMapNo(atom))
 					mMaxGenericMapNo = mol.getAtomMapNo(atom);
@@ -418,7 +418,7 @@ public class Reactor {
 				// atoms, which match any (non-exclude) atom of generic reactant, don't need a new mapping number
 				StereoMolecule gr = mGenericReaction.getReactant(i);
 				for (int atom=0; atom<gr.getAtoms(); atom++)
-					if ((gr.getAtomQueryFeatures(atom) & Molecule.cAtomQFExcludeGroup) == 0)
+					if (!gr.isExcludeGroupAtom(atom))
 						firstFreeMapNo--;
 				}
 			}
@@ -655,6 +655,7 @@ public class Reactor {
 
 			// If we have multiple allowed bond types on generic product bond, then we need to calculate
 			// the new bond order from reactant bond order and generic reaction bond order change.
+			// Note: we don't support quadruple or quintuple bonds here!
 			int productQFBondType = genericProduct.getBondQueryFeatures(gpBond) & Molecule.cBondQFBondTypes;
 			if (productQFBondType != 0) {
 				boolean found = false;
