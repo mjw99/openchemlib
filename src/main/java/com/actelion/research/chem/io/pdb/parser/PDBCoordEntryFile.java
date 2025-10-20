@@ -35,6 +35,7 @@
 package com.actelion.research.chem.io.pdb.parser;
 
 import com.actelion.research.chem.Molecule3D;
+import com.actelion.research.util.SortedList;
 
 import java.util.*;
 
@@ -77,6 +78,10 @@ public class PDBCoordEntryFile {
     private String source;
 
     private String keywords;
+
+    private String model;
+
+    private String resolution;
 
     private String expdata;
     private String nummdl;
@@ -132,7 +137,7 @@ public class PDBCoordEntryFile {
     private List<AtomRecord> hetAtomRecords;
 
 
-    private List<int[]> liConnect;
+    private SortedList<int[]> liConnect;
 
     private String master;
 
@@ -257,6 +262,22 @@ public class PDBCoordEntryFile {
 
     public void setMdltyp(String mdltyp) {
         this.mdltyp = mdltyp;
+    }
+
+    public String getModel() {
+        return model;
+    }
+
+    public void setModel(String model) {
+        this.model = model;
+    }
+
+    public String getResolution() {
+        return resolution;
+    }
+
+    public void setResolution(String resolution) {
+        this.resolution = resolution;
     }
 
     public String getAuthor() {
@@ -555,11 +576,11 @@ public class PDBCoordEntryFile {
         this.liMtrix3 = liMtrix3;
     }
 
-    public List<int[]> getLiConnect() {
+    public SortedList<int[]> getLiConnect() {
         return liConnect;
     }
 
-    public void setLiConnect(List<int[]> liConnect) {
+    public void setLiConnect(SortedList<int[]> liConnect) {
         this.liConnect = liConnect;
     }
 

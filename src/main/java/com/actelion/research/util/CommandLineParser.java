@@ -100,6 +100,13 @@ public class CommandLineParser {
         }
         return v;
     }
+    public long getOrDefault(String command, long defaultVal){
+        long v=defaultVal;
+        if(contains(command)){
+            v=getAsInt(command);
+        }
+        return v;
+    }
     public double getOrDefault(String command, double defaultVal){
         double v=defaultVal;
         if(contains(command)){
@@ -158,6 +165,13 @@ public class CommandLineParser {
         File d = getAsFile(command);
         if(!d.isDirectory()){
             throw new NotDirectoryException("Not a dir " + d.getAbsolutePath());
+        }
+        return d;
+    }
+    public File getAsDirOrFile(String command) throws NotDirectoryException {
+        File d = getAsFile(command);
+        if(!d.isDirectory() && !d.isFile()){
+            throw new NotDirectoryException("Not a file or dir " + d.getAbsolutePath());
         }
         return d;
     }

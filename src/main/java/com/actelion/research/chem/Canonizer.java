@@ -3181,12 +3181,11 @@ System.out.println();
 		if (mAllHydrogensAreExplicit && (mMode & ENCODE_ATOM_SELECTION) != 0) {
 			count = 0;
 			int connBits = 0;
-			for (int i=0; i<mMol.getAtoms(); i++) {
-				int atom = mGraphAtom[i];
+			for (int atom=0; atom<mMol.getAtoms(); atom++) {
 				int conns = 0;
-				for (int j=mMol.getConnAtoms(atom); j<mMol.getAllConnAtoms(atom); j++) {
-					if (mMol.isSelectedAtom(mMol.getConnAtom(atom, j))) {
-						int hIndex = j - mMol.getConnAtoms(atom);
+				for (int j=mMol.getConnAtoms(mGraphAtom[atom]); j<mMol.getAllConnAtoms(mGraphAtom[atom]); j++) {
+					if (mMol.isSelectedAtom(mMol.getConnAtom(mGraphAtom[atom], j))) {
+						int hIndex = j - mMol.getConnAtoms(mGraphAtom[atom]);
 						conns |= (1 << hIndex);
 						connBits = Math.max(connBits, hIndex+1);
 						}
@@ -3198,12 +3197,11 @@ System.out.println();
 				encodeFeatureNo(38);    // 38 = datatype 'selected hydrogens'
 				encodeBits(count, nbits);
 				encodeBits(connBits, 3);
-				for (int i=0; i<mMol.getAtoms(); i++) {
-					int atom = mGraphAtom[i];
+				for (int atom=0; atom<mMol.getAtoms(); atom++) {
 					int conns = 0;
-					for (int j=mMol.getConnAtoms(atom); j<mMol.getAllConnAtoms(atom); j++) {
-						if (mMol.isSelectedAtom(mMol.getConnAtom(atom, j))) {
-							int hIndex = j - mMol.getConnAtoms(atom);
+					for (int j=mMol.getConnAtoms(mGraphAtom[atom]); j<mMol.getAllConnAtoms(mGraphAtom[atom]); j++) {
+						if (mMol.isSelectedAtom(mMol.getConnAtom(mGraphAtom[atom], j))) {
+							int hIndex = j - mMol.getConnAtoms(mGraphAtom[atom]);
 							conns |= (1 << hIndex);
 							}
 						}
@@ -3417,7 +3415,7 @@ System.out.println();
 		mEncodingBuffer.append(includeHydrogenCoordinates ? '#' : '!');
 		encodeBits(mZCoordinatesAvailable ? 1 : 0, 1);
 		encodeBits(keepPositionAndScale ? 1 : 0, 1);
-		encodeBits(resolutionBits/2, 4);	// resolution bits devided by 2
+		encodeBits(resolutionBits >> 1, 4);	// resolution bits divided by 2
 
 		double maxDelta = 0.0;
 		for (int i=1; i<mMol.getAtoms(); i++)
@@ -3436,8 +3434,8 @@ System.out.println();
 			}
 
 		int binCount = (1 << resolutionBits);
-		double increment = maxDelta / (binCount / 2.0 - 1);
-		double maxDeltaPlusHalfIncrement = maxDelta + increment / 2.0;
+		double increment = maxDelta / ((binCount >> 1) - 1);
+		double maxDeltaPlusHalfIncrement = maxDelta + 0.5 * increment;
 
 		for (int i=1; i<mMol.getAtoms(); i++)
 			encodeCoords(mGraphAtom[i], (mGraphFrom[i] == -1) ? -1 : mGraphAtom[mGraphFrom[i]], maxDeltaPlusHalfIncrement, increment, resolutionBits, coords);

@@ -47,13 +47,14 @@ public class Reactor {
 	public static final int MODE_REMOVE_DUPLICATE_PRODUCTS = 4;
 	public static final int MODE_ALLOW_CHARGE_CORRECTIONS = 8;
 
-	private Reaction			mGenericReaction;
-	private SSSearcher			mSSSearcher;
-	private	StereoMolecule[]	mReactant;
-	private int[][]				mMinFreeValence;	// minimum required free valence on reactant atoms
-	private boolean[][]			mIsReactionCenter;	// reaction center flags on product atoms
-	private boolean				mRetainCoordinates,mFullyMapReactions,mUniqueProductsOnly,mAllowChargeCorrections;
-	private int					mMaxGenericMapNo,mMaxCount,mReactantMatchCombinationCount;
+	private final Reaction		mGenericReaction;
+	private final SSSearcher	mSSSearcher;
+	private	final StereoMolecule[] mReactant;
+	private final int[][]		mMinFreeValence;	// minimum required free valence on reactant atoms
+	private final boolean[][]	mIsReactionCenter;	// reaction center flags on product atoms
+	private final boolean		mRetainCoordinates,mFullyMapReactions,mUniqueProductsOnly,mAllowChargeCorrections;
+	private final int			mMaxCount;
+	private int					mMaxGenericMapNo,mReactantMatchCombinationCount;
 	private final ArrayList<int[]>[] mMatchList;
 	private int[][][]			mReactantMapNo;	// Reactant mapNos of the real reactant change with every reactant substructure match
 	private StereoMolecule[][]	mProduct;
@@ -491,7 +492,6 @@ public class Reactor {
 
 
 	private StereoMolecule generateProduct(ArrayList<int[]>[] matchList, int[] matchListIndex, int genericProductNo) {
-		// currently only support for first product of generic reaction
 		StereoMolecule genericProduct = mGenericReaction.getProduct(genericProductNo);
 
 		StereoMolecule product = new StereoMolecule();
@@ -682,17 +682,17 @@ public class Reactor {
 								int rBondOrder = mReactant[i].getBondOrder(rBond);
 
 								// only consider simple bond order features
-								reactantQFBondType &= Molecule.cBondQFSingle | Molecule.cBondQFDouble | Molecule.cBondQFTriple;
-								productQFBondType &= Molecule.cBondQFSingle | Molecule.cBondQFDouble | Molecule.cBondQFTriple;
+								reactantQFBondType &= Molecule.cBondTypeSingle | Molecule.cBondTypeDouble | Molecule.cBondTypeTriple;
+								productQFBondType &= Molecule.cBondTypeSingle | Molecule.cBondTypeDouble | Molecule.cBondTypeTriple;
 
 								// increase in bond order
-								if (reactantQFBondType == (Molecule.cBondQFSingle | Molecule.cBondQFDouble)
-								 && productQFBondType == (Molecule.cBondQFDouble | Molecule.cBondQFTriple)) {
+								if (reactantQFBondType == (Molecule.cBondTypeSingle | Molecule.cBondTypeDouble)
+								 && productQFBondType == (Molecule.cBondTypeDouble | Molecule.cBondTypeTriple)) {
 									product.setBondType(productBond, rBondOrder <= 1 ? Molecule.cBondTypeDouble : Molecule.cBondTypeTriple);
 									}
 								// decrease in bond order
-								else if (reactantQFBondType == (Molecule.cBondQFDouble | Molecule.cBondQFTriple)
-								 && productQFBondType == (Molecule.cBondQFSingle | Molecule.cBondQFDouble)) {
+								else if (reactantQFBondType == (Molecule.cBondTypeDouble | Molecule.cBondTypeTriple)
+								 && productQFBondType == (Molecule.cBondTypeSingle | Molecule.cBondTypeDouble)) {
 									product.setBondType(productBond, rBondOrder == 3 ? Molecule.cBondTypeDouble : Molecule.cBondTypeSingle);
 									}
 								else {

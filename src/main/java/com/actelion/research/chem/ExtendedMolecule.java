@@ -407,6 +407,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 	/**
 	 * This is different from the Hendrickson pi-value, which considers pi-bonds to carbons only.
+	 * Requires helper arrays state cHelperNeighbours.
 	 * @param atom
 	 * @return the number pi electrons at atom (the central atom of acetone would have 1)
 	 */
@@ -1108,7 +1109,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		if (isFragmentMember == null)
 			isFragmentMember = new boolean[mAllAtoms];
 
-		int graphAtom[] = new int[mAllAtoms];
+		int[] graphAtom = new int[mAllAtoms];
 
 		graphAtom[0] = rootAtom;
 		isFragmentMember[rootAtom] = true;
@@ -1243,7 +1244,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * If small fragments were removed, then canonizeCharge() is called to
 	 * neutralize charges after potential removal of counter ions.
 	 * Metal ligand bonds may or may not be considered a connection.
-	 * @param considerMetalBonds
+	 * @param considerMetalBonds, if true the connected metal is not removed
 	 * @return atom mapping from old to new index; null if no fragments were removed
 	 */
 	public int[] stripSmallFragments(boolean considerMetalBonds) {
@@ -1633,6 +1634,9 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		return false;
 		}
 
+	/**
+	 * @return number of distinct aromatic rings in the molecule
+	 */
 	public int getAromaticRingCount() {
 		ensureHelperArrays(cHelperRings);
 		int count = 0;
@@ -1774,6 +1778,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 
 	/**
+	 * Requires helper arrays state cHelperRings.
 	 * @param atom
 	 * @return whether the atom is a member of a delocalized ring (subset of aromatic rings)
 	 */
@@ -1782,11 +1787,21 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	}
 
 
+	/**
+	 * Requires helper arrays state cHelperRings.
+	 * @param bond
+	 * @return whether the bond is a member of an aromatic ring
+	 */
 	public boolean isAromaticBond(int bond) {
 		return bond<mBonds && mRingSet.isAromaticBond(bond);
 	}
 
 
+	/**
+	 * Requires helper arrays state cHelperRings.
+	 * @param bond
+	 * @return whether the bond is a member of an aromatic ring that contains at least one hetero atom
+	 */
 	public boolean isHeteroAromaticBond(int bond) {
 		return bond<mBonds && mRingSet.isHeteroAromaticBond(bond);
 	}
@@ -1799,26 +1814,38 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * Indole has 6 delocalized bonds.
 	 * This method also returns true, if the molecule is a fragment and if the bond is explicitly
 	 * defined to be delocalized.
+	 * Requires helper arrays state cHelperRings.
 	 * @param bond
 	 * @return
 	 */
 	@Override
 	public boolean isDelocalizedBond(int bond) {
-		return (bond < mBonds) ? mRingSet.isDelocalizedBond(bond) || mBondType[bond] == cBondTypeDelocalized : false;
+		return bond<mBonds && (mRingSet.isDelocalizedBond(bond) || mBondType[bond] == cBondTypeDelocalized);
 		}
 
 
+	/**
+	 * Requires helper arrays state cHelperRings.
+	 * @param atom
+	 * @return whether the atom is a member of ring of any size
+	 */
 	public boolean isRingAtom(int atom) {
 		return (mAtomFlags[atom] & cAtomFlagsRingBonds) != 0;
 		}
 
 
-	public boolean isRingBond(int bnd) {
-		return (mBondFlags[bnd] & cBondFlagRing) != 0;
+	/**
+	 * Requires helper arrays state cHelperRings.
+	 * @param bond
+	 * @return whether the bond is a member of ring of any size
+	 */
+	public boolean isRingBond(int bond) {
+		return (mBondFlags[bond] & cBondFlagRing) != 0;
 		}
 
 
 	/**
+	 * Requires helper arrays state cHelperRings.
 	 * @param atom
 	 * @return whether atom is a member of a ring not larger than 7 atoms
 	 */
@@ -1828,6 +1855,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 
 	/**
+	 * Requires helper arrays state cHelperRings.
 	 * @param bond
 	 * @return whether bond is a member of a ring not larger than 7 atoms
 	 */
@@ -1837,6 +1865,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 
 	/**
+	 * Requires helper arrays state cHelperNeighbours.
 	 * @param atom
 	 * @return whether atom has a neighbor that is connected through a double/triple bond to a hetero atom
 	 */
@@ -1845,6 +1874,11 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		}
 
 
+	/**
+	 * Requires helper arrays state cHelperRings.
+	 * @param atom
+	 * @return number of connected bonds, which are member of a ring
+	 */
 	public int getAtomRingBondCount(int atom) {
 		int flags = (mAtomFlags[atom] & cAtomFlagsRingBonds);
 		return (flags == 0) ? 0
@@ -3188,7 +3222,8 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 			|| atomicNo == 11	// Na
 			|| atomicNo == 19	// K
 			|| atomicNo == 37	// Rb
-			|| atomicNo == 55;	// Cs
+			|| atomicNo == 55	// Cs
+			|| atomicNo == 87;	// Fr
 		}
 
 	/**
@@ -3197,10 +3232,12 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 */
 	public boolean isEarthAlkaliMetal(int atom) {
 		int atomicNo = mAtomicNo[atom];
-		return atomicNo == 12	// Mg
+		return atomicNo == 4	// Be
+			|| atomicNo == 12	// Mg
 			|| atomicNo == 20	// Ca
 			|| atomicNo == 38	// Sr
-			|| atomicNo == 56;	// Ba
+			|| atomicNo == 56	// Ba
+			|| atomicNo == 88;	// Ra
 		}
 
 	/**
@@ -3223,7 +3260,8 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		return atomicNo == 8	// O
 			|| atomicNo == 16	// S
 			|| atomicNo == 34	// Se
-			|| atomicNo == 52;	// Te
+			|| atomicNo == 52	// Te
+			|| atomicNo == 84;	// Po
 		}
 
 	/**
@@ -3235,7 +3273,8 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		return atomicNo == 9	// F
 			|| atomicNo == 17	// Cl
 			|| atomicNo == 35	// Br
-			|| atomicNo == 53;	// I
+			|| atomicNo == 53	// I
+			|| atomicNo == 85;	// At
 		}
 
 	/**
@@ -3830,7 +3869,7 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 	 * custom labels even if they have a non-standard bonding situation (everything being different
 	 * from having one single bonded non-simple-hydrogen neighbour, e.g. unbonded hydrogen, H2,
 	 * a metal ligand bond to another atom, two single bonds, etc.)
-	 * If unusual bonding needs to be considered, check for that independently from this method.
+	 * If unusual bonding needs to be considered, check for that independently of this method.
 	 * @param atom
 	 * @return
 	 */
@@ -3845,33 +3884,26 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 
 	/**
 	 * Removes all plain explicit hydrogens atoms from the molecule, converting them effectively to implicit ones.
-	 * Assuming that this molecule has 2D-coordinates, this method perceives stereo configurations from up/down-bonds
-	 * to explicit hydrogens before deleting them and turns another bond into a stereo bond to indicate the proper configuration.
-	 * If the removal of a hydrogen atom would change an atom's implicit valence, the atom's abnormal valence is set accordingly.
-	 */
-	public void removeExplicitHydrogens() {
-		removeExplicitHydrogens(true, false);
-		}
-
-	/**
-	 * Removes all plain explicit hydrogens atoms from the molecule, converting them effectively to implicit ones.
 	 * If the molecules has 2D-coordinates (hasValid2DCoords==true), then this method initially perceives stereo
 	 * configurations E/Z/R/S from coordinates and up/down-bonds to explicit hydrogens before deleting them
 	 * and turns another bond into a stereo bond to indicate the proper configuration.
 	 * If the removal of a hydrogen atom would change an atom's implicit valence, the atom's abnormal valence is set accordingly.
-	 * @param hasValid2DCoords pass true, if molecule has 2D-atom-coordinates
-	 * @param hasValid3DCoords pass true, if molecule has 3D-atom-coordinates
+	 * @param hasValid2DCoords whether molecule has 2D-atom-coordinates and, thus, new stereo bonds need to be assigned
 	 */
-	public void removeExplicitHydrogens(boolean hasValid2DCoords, boolean hasValid3DCoords) {
+	public void removeExplicitHydrogens(boolean hasValid2DCoords) {
 		// calculate EZ and TH stereo parities if 2D-atom coordinates are available
 		ensureHelperArrays(hasValid2DCoords ? cHelperParities : cHelperNeighbours);
 		mAllAtoms = mAtoms;
 		mAllBonds = mBonds;
+		boolean[] removedStereoBond = new boolean[mAtoms];
 		for (int atom=0; atom<mAtoms; atom++) {
 			if (mAllConnAtoms[atom] != mConnAtoms[atom]) {
 				// If we have an abnormal valence implicitly defined by explicit
 				// hydrogens, we need to explicitly define that abnormal valence!
 				int abnormalValence = getImplicitHigherValence(atom, false);
+
+				removedStereoBond[atom] = mAllConnAtoms[atom] == mConnAtoms[atom]+1
+									   && isStereoBond(mConnBond[atom][mConnAtoms[atom]]);
 
 				mAllConnAtoms[atom] = mConnAtoms[atom];
 
@@ -3887,7 +3919,9 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 			}
 
 		if (hasValid2DCoords)
-			setStereoBondsFromParity();
+			for (int atom=0; atom<mAtoms; atom++)
+				if (removedStereoBond[atom])
+					setStereoBondFromAtomParity(atom);
 
 		mValidHelperArrays = cHelperNone;
 		}
@@ -4125,6 +4159,10 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 				mAtomQueryFeatures[atom] &= ~cAtomQFHydrogen;
 				mAtomQueryFeatures[atom] &= ~cAtomQFPiElectrons;
 				}
+
+			if ((mAtomQueryFeatures[atom] & cAtomQFExcludeGroup) != 0
+			 && mAtomMapNo[atom] != 0)
+				removeMappingNo(mAtomMapNo[atom]);
 			}
 		}
 
@@ -4142,8 +4180,8 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 		for (int bond=0; bond<mBonds; bond++) {
 			int bondTypeQFCount = Integer.bitCount(mBondQueryFeatures[bond] & (Molecule.cBondQFBondTypes | Molecule.cBondQFRareBondTypes));
 
-			if (isDelocalizedBond(bond) & (mBondQueryFeatures[bond] & cBondQFDelocalized) != 0) {
-				mBondQueryFeatures[bond] &= ~cBondQFDelocalized;
+			if (isDelocalizedBond(bond) & (mBondQueryFeatures[bond] & cBondTypeDelocalized) != 0) {
+				mBondQueryFeatures[bond] &= ~cBondTypeDelocalized;
 				bondTypeQFCount--;
 				}
 
@@ -4152,19 +4190,19 @@ public class ExtendedMolecule extends Molecule implements Serializable {
 			if (bondTypeQFCount != 0) {
 				int bondType = mBondType[bond] & cBondTypeMaskSimple;
 				if (bondType == cBondTypeSingle)
-					mBondQueryFeatures[bond] |= cBondQFSingle;
+					mBondQueryFeatures[bond] |= cBondTypeSingle;
 				else if (bondType == cBondTypeDouble)
-					mBondQueryFeatures[bond] |= cBondQFDouble;
+					mBondQueryFeatures[bond] |= cBondTypeDouble;
 				else if (bondType == cBondTypeTriple)
-					mBondQueryFeatures[bond] |= cBondQFTriple;
+					mBondQueryFeatures[bond] |= cBondTypeTriple;
 				else if (bondType == cBondTypeQuadruple)
-					mBondQueryFeatures[bond] |= cBondQFQuadruple;
+					mBondQueryFeatures[bond] |= cBondTypeQuadruple;
 				else if (bondType == cBondTypeQuintuple)
-					mBondQueryFeatures[bond] |= cBondQFQuintuple;
+					mBondQueryFeatures[bond] |= cBondTypeQuintuple;
 				else if (bondType == cBondTypeMetalLigand)
-					mBondQueryFeatures[bond] |= cBondQFMetalLigand;
+					mBondQueryFeatures[bond] |= cBondTypeMetalLigand;
 				else if (bondType == cBondTypeDelocalized)
-					mBondQueryFeatures[bond] |= cBondQFDelocalized;
+					mBondQueryFeatures[bond] |= cBondTypeDelocalized;
 				}
 			}
 		}

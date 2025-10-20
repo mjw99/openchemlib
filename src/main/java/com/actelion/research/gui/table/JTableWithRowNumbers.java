@@ -203,6 +203,7 @@ class RowNumberPanel extends JPanel implements ListSelectionListener,MouseListen
 		mHighlightListeners = new Vector<>();
 		addMouseListener(this);
 		addMouseMotionListener(this);
+		table.getSelectionModel().addListSelectionListener(this);
 	}
 
 	@Override
@@ -276,9 +277,11 @@ class RowNumberPanel extends JPanel implements ListSelectionListener,MouseListen
 		mDragStartRowHeight = mTable.getRowHeight();
 		int tolerance = HiDPIHelper.scale(cResizeTolerance);
 		int row = y / mDragStartRowHeight;
+		if (row >= mTable.getRowCount())
+			row = -1;
 		int fracY = y % mDragStartRowHeight;
 
-		mResizingStartRow = (fracY <= tolerance && row > 0) ? row - 1 : (fracY >= mDragStartRowHeight - tolerance) ? row : -1;
+		mResizingStartRow = (row == -1) ? -1 : (fracY <= tolerance && row > 0) ? row - 1 : (fracY >= mDragStartRowHeight - tolerance) ? row : -1;
 		setCursor(mResizingStartRow == -1 ? JTableWithRowNumbers.sDefaultCursor : JTableWithRowNumbers.sResizeCursor);
 
 		if (mHighlightedRow != row) {

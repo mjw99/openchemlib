@@ -38,6 +38,7 @@ import com.actelion.research.util.datamodel.DoubleArray;
 import java.awt.Point;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.*;
@@ -68,6 +69,14 @@ public class StringFunctions {
 			arrDouble[i]=Double.parseDouble(a[i]);
 		}
 		return arrDouble;
+	}
+	public static int[] parse2Int(String s, String sepRegEx){
+		String [] a = s.split(sepRegEx);
+		int [] vals = new int[a.length];
+		for (int i = 0; i < a.length; i++) {
+			vals[i]=Integer.parseInt(a[i]);
+		}
+		return vals;
 	}
 
 
@@ -832,6 +841,26 @@ public class StringFunctions {
 		return li;
 	}
 
+	public static String shuffle(String s) {
+
+		List<Character> characters = new ArrayList<>();
+		for (char c : s.toCharArray()) {
+			characters.add(c);
+		}
+
+		// Shuffle the list
+		Collections.shuffle(characters);
+
+		// Convert the list back to String
+		StringBuilder shuffledString = new StringBuilder();
+		for (char c : characters) {
+			shuffledString.append(c);
+		}
+
+		return shuffledString.toString();
+	}
+
+
 	/**
 	 * https://stackoverflow.com/questions/4385623/bytes-of-a-string-in-java
 	 * sizeof(string) =
@@ -1451,7 +1480,7 @@ public class StringFunctions {
 		return true;
 	}
 
-	public static String toStringStackTrace(Exception ex){
+	public static String toStringStackTrace(Throwable ex){
 		StringWriter sw = new StringWriter();
 		PrintWriter pw = new PrintWriter(sw);
 		ex.printStackTrace(pw);

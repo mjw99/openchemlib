@@ -40,7 +40,7 @@ import com.actelion.research.chem.PeriodicTable;
  * ModelAtom
  * Created by korffmo1 on 11.04.18.
  */
-public class AtomRecord {
+public class AtomRecord implements Comparable<AtomRecord> {
 
     private int serialId;
 
@@ -114,8 +114,12 @@ public class AtomRecord {
     public String getAnisou() {
         return anisou;
     }
-    
-    public String getAtomName() {
+
+	public String getAltLoc() {
+		return altLoc;
+	}
+
+	public String getAtomName() {
     	return atomName;
     }
     
@@ -174,4 +178,8 @@ public class AtomRecord {
     	this.isTerminalC = isTerminalC;
     }
 
+	@Override
+	public int compareTo(AtomRecord o) {
+		return Integer.compare(serialId, o.serialId);
+	}
 }
